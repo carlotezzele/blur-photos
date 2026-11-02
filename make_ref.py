@@ -1,10 +1,10 @@
-"""Crea ref_emb.npy, l'impronta del tuo volto usata da app.py.
+"""Creates ref_emb.npy, the fingerprint of your face used by app.py.
 
-Uso:  python make_ref.py <cartella con foto in cui ci sei tu>
+Usage:  python make_ref.py <folder of photos that you appear in>
 
-In ogni foto prende il volto piu' grande, poi tiene solo quelli coerenti tra loro
-(cosi' le foto in cui il volto piu' grande non e' il tuo vengono scartate).
-Bastano 10-20 foto; piu' sono varie (luce, eta', angolazione) meglio funziona.
+It takes the largest face in each photo, then keeps only the ones consistent with each other
+(so photos where the largest face isn't yours get discarded).
+10-20 photos are enough; the more varied they are (lighting, age, angle) the better it works.
 """
 import os, sys, numpy as np, cv2
 import onnxruntime as ort
@@ -32,11 +32,11 @@ for n in sorted(os.listdir(src)):
         embs.append(f.normed_embedding)
 E = np.array(embs)
 if len(E) < 3:
-    sys.exit("servono almeno 3 foto con un volto riconoscibile")
+    sys.exit("at least 3 photos with a recognisable face are needed")
 
 keep = np.ones(len(E), bool)
 for _ in range(5):
     m = E[keep].mean(0); m /= np.linalg.norm(m)
     keep = E @ m >= 0.4
 np.save(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ref_emb.npy"), E[keep])
-print(f"volti trovati: {len(E)}, tenuti come riferimento: {keep.sum()}")
+print(f"faces found: {len(E)}, kept as reference: {keep.sum()}")

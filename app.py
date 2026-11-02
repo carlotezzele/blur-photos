@@ -1,8 +1,8 @@
-"""Oscura le persone che non sono te.
+"""Hides the people who aren't you.
 
-Avvio:  python app.py "/percorso/della/cartella/con/le/sottocartelle/di/foto"
-Poi apri http://localhost:5055 (si apre da solo).
-Gli originali non vengono mai modificati: i risultati vanno in "<cartella>/Foto oscurate".
+Start:  python app.py "/path/to/the/folder/with/the/photo/subfolders"
+Then open http://localhost:5055 (it opens by itself).
+Originals are never modified: results go to "<folder>/Obscured photos".
 """
 import io, os, sys, shutil, threading, subprocess, webbrowser
 import numpy as np, cv2
@@ -18,18 +18,18 @@ from ultralytics import YOLO
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("OSCURA_BASE", "."))
-OUT = os.environ.get("OSCURA_OUT", os.path.join(BASE, "Foto oscurate"))
+OUT = os.environ.get("OSCURA_OUT", os.path.join(BASE, "Obscured photos"))
 EXTS = {".jpg", ".jpeg", ".png", ".heic"}
-WORK_SIDE = 2000          # risoluzione di lavoro per analisi e anteprima
+WORK_SIDE = 2000          # working resolution for analysis and preview
 PORT = 5055
 
-print("carico i modelli...", flush=True)
+print("loading models...", flush=True)
 face_app = FaceAnalysis(name="buffalo_l", allowed_modules=["detection", "recognition"],
                         providers=[("CUDAExecutionProvider", {"device_id": 0}), "CPUExecutionProvider"])
 face_app.prepare(ctx_id=0, det_size=(640, 640))
-seg = YOLO(os.path.join(HERE, "yolo11m-seg.pt"))     # scaricato automaticamente al primo avvio
+seg = YOLO(os.path.join(HERE, "yolo11m-seg.pt"))     # downloaded automatically on first launch
 if not os.path.exists(os.path.join(HERE, "ref_emb.npy")):
-    sys.exit("manca ref_emb.npy: crealo prima con  python make_ref.py <cartella con foto tue>")
+    sys.exit("ref_emb.npy is missing: create it first with  python make_ref.py <folder of photos of you>")
 REF = np.load(os.path.join(HERE, "ref_emb.npy"))
 model_lock = threading.Lock()
 cache, cache_lock = {}, threading.Lock()
@@ -97,12 +97,12 @@ def analyze(folder, name):
             cx, cy = int(np.clip((x1 + x2) / 2, 0, w - 1)), int(np.clip((y1 + y2) / 2, 0, h - 1))
             owner = [i for i, m in enumerate(masks) if m[cy, cx]]
             if owner:
-                # se due persone si sovrappongono scegli la maschera piu' piccola che contiene il volto
+                # if two people overlap, pick the smallest mask that contains the face
                 i = min(owner, key=lambda i: masks[i].sum())
                 if items[i]["score"] is None or sc > items[i]["score"]:
                     items[i]["score"] = sc
             else:
-                # volto senza corpo rilevato: ellisse attorno alla testa
+                # face with no detected body: ellipse around the head
                 m = np.zeros((h, w), np.uint8)
                 ax, ay = (x2 - x1) * 0.8, (y2 - y1) * 0.9
                 cv2.ellipse(m, (cx, cy), (int(ax), int(ay)), 0, 0, 360, 1, -1)
@@ -131,7 +131,7 @@ def index():
 
 @app.get("/api/folders")
 def folders():
-    fs = sorted(d for d in os.listdir(BASE) if os.path.isdir(os.path.join(BASE, d)) and d != "Foto oscurate")
+    fs = sorted(d for d in os.listdir(BASE) if os.path.isdir(os.path.join(BASE, d)) and d != "Obscured photos")
     return jsonify(fs)
 
 
@@ -172,7 +172,7 @@ def api_save():
 
     alpha = np.asarray(Image.open(request.files["mask"].stream).convert("RGBA"))[:, :, 3]
     if alpha.max() == 0 and out_name(name) == name:
-        shutil.copy2(src, dst)          # niente da coprire: copia identica
+        shutil.copy2(src, dst)          # nothing to cover: identical copy
         return jsonify(ok=True, copied=True)
 
     orig = Image.open(src)
@@ -200,14 +200,14 @@ def api_save():
     if dst.lower().endswith(".png"):
         res.save(dst, "PNG")
     else:
-        exif[0x0112] = 1        # l'immagine e' gia' raddrizzata
+        exif[0x0112] = 1        # the image is already upright
         res.save(dst, "JPEG", quality=95, exif=exif.tobytes())
     os.utime(dst, (st.st_atime, st.st_mtime))
     return jsonify(ok=True, copied=False)
 
 
 def open_browser(url):
-    if shutil.which("cmd.exe"):         # WSL: apri il browser di Windows
+    if shutil.which("cmd.exe"):         # WSL: open the Windows browser
         subprocess.Popen(["cmd.exe", "/c", "start", "", url], cwd="/mnt/c",
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
@@ -216,7 +216,7 @@ def open_browser(url):
 
 if __name__ == "__main__":
     url = f"http://localhost:{PORT}"
-    print("cartella:", BASE, "\npronto:", url, flush=True)
+    print("folder:", BASE, "\nready:", url, flush=True)
     if not os.environ.get("OSCURA_NOBROWSER"):
         threading.Timer(1.5, open_browser, args=(url,)).start()
     app.run(host="127.0.0.1", port=PORT, threaded=True)

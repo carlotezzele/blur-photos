@@ -1,17 +1,17 @@
-# Oscura persone
+# Hide People
 
-Programma locale per **sfocare o coprire con una sagoma** tutte le persone in una foto tranne te.
+A local program that **blurs or covers with a silhouette** every person in a photo except you.
 
-- Riconosce il tuo volto (InsightFace) e trova il contorno esatto di ogni persona (YOLO11 segmentation).
-- **Modalità automatica**: prepara la copertura di tutti gli altri e chiede conferma foto per foto.
-- **Modalità a mano**: parti da zero e scegli tu chi coprire con un clic, oppure con pennello e gomma.
-- Due effetti: **sfocatura** (intensità regolabile) o **sagoma** a tinta unita della stessa forma della persona.
-- Gli originali non vengono mai modificati. I risultati vanno in `Foto oscurate/`, con data ed EXIF conservati.
-- Funziona tutto in locale, nel browser: nessuna foto lascia il computer.
+- It recognises your face (InsightFace) and finds the exact outline of every person (YOLO11 segmentation).
+- **Automatic mode**: prepares the cover for everyone else and asks you to confirm photo by photo.
+- **Manual mode**: start from scratch and pick who to cover with a click, or with brush and eraser.
+- Two effects: **blur** (adjustable strength) or a solid-colour **silhouette** with the same shape as the person.
+- Originals are never modified. Results go to `Obscured photos/`, with date and EXIF preserved.
+- Everything runs locally, in the browser: no photo ever leaves your computer.
 
-## Installazione
+## Installation
 
-Serve Python 3.10–3.12.
+Requires Python 3.10–3.12.
 
 ```bash
 python -m venv venv
@@ -19,46 +19,46 @@ source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Con una GPU NVIDIA il riconoscimento dei volti usa CUDA. Altrimenti sostituisci `onnxruntime-gpu` con `onnxruntime` in `requirements.txt`. Al primo avvio i modelli (`buffalo_l` e `yolo11m-seg.pt`) vengono scaricati in automatico.
+With an NVIDIA GPU, face recognition uses CUDA. Otherwise replace `onnxruntime-gpu` with `onnxruntime` in `requirements.txt`. On first launch the models (`buffalo_l` and `yolo11m-seg.pt`) are downloaded automatically.
 
-## Uso
+## Usage
 
-1. **Crea l'impronta del tuo volto** partendo da una cartella di foto in cui ci sei tu. Ne bastano 10–20, meglio se varie:
-
-   ```bash
-   python make_ref.py "/percorso/foto/di/me"
-   ```
-
-   Lo script genera `ref_emb.npy`. Il file contiene dati biometrici, quindi è escluso da git e non va condiviso.
-
-2. **Avvia il programma** indicando la cartella che contiene le sottocartelle di foto:
+1. **Create your face fingerprint** from a folder of photos that you appear in. 10–20 are enough, the more varied the better:
 
    ```bash
-   python app.py "/percorso/Foto"
+   python make_ref.py "/path/to/photos/of/me"
    ```
 
-   Il browser si apre da solo su <http://localhost:5055>. In alto scegli la sottocartella da lavorare.
+   The script generates `ref_emb.npy`. The file contains biometric data, so it is excluded from git and must not be shared.
 
-### Comandi
+2. **Start the program**, pointing it at the folder that contains your photo subfolders:
 
-| Tasto | Azione |
+   ```bash
+   python app.py "/path/to/Photos"
+   ```
+
+   The browser opens by itself at <http://localhost:5055>. Pick the subfolder to work on at the top.
+
+### Controls
+
+| Key | Action |
 |---|---|
-| `Invio` | conferma, salva e passa alla foto successiva |
-| `→` / `←` | salta / torna indietro |
-| `C` | clic su una persona: la fa passare da coperta (rosso) a visibile (verde) e viceversa |
-| `B` / `G` | pennello per coprire / gomma per scoprire |
-| `[` `]` | dimensione del pennello |
-| `Ctrl+Z` | annulla l'ultima pennellata |
-| tieni `O` | mostra l'originale |
+| `Enter` | confirm, save and move to the next photo |
+| `→` / `←` | skip / go back |
+| `C` | click a person: toggles them between covered (red) and visible (green) |
+| `B` / `E` | brush to cover / eraser to uncover |
+| `[` `]` | brush size |
+| `Ctrl+Z` | undo the last brush stroke |
+| hold `O` | show the original |
 
-Il numero accanto a ogni persona indica quanto il suo volto somiglia al tuo. Il volto più simile della foto, se supera 0,35, viene considerato il tuo.
+The number next to each person shows how closely their face resembles yours. The most similar face in the photo, if it scores above 0.35, is taken to be you.
 
-## Limiti
+## Limitations
 
-- Una persona tagliata dal bordo o molto coperta può avere un contorno incompleto: completalo con il pennello.
-- Se il tuo volto non si vede, il programma non ti riconosce: basta un clic su di te per renderti visibile.
-- La sfocatura lascia intuire colori e corporatura. Per un anonimato vero usa la sagoma.
+- A person cut off by the edge or heavily covered may get an incomplete outline: finish it with the brush.
+- If your face isn't visible, the program won't recognise you: one click on yourself makes you visible.
+- Blurring still hints at colours and body shape. For real anonymity, use the silhouette.
 
-## Licenza
+## License
 
-AGPL-3.0, la stessa di [Ultralytics YOLO](https://github.com/ultralytics/ultralytics), che il programma usa. I modelli pre-addestrati di InsightFace sono rilasciati solo per uso non commerciale.
+AGPL-3.0, the same as [Ultralytics YOLO](https://github.com/ultralytics/ultralytics), which the program uses. InsightFace's pre-trained models are released for non-commercial use only.

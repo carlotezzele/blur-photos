@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Oscura persone</title>
+<title>Hide People</title>
 <style>
   :root { --bg:#16181c; --panel:#20232a; --line:#333842; --text:#e8e9ec; --muted:#9aa0aa;
           --accent:#4f8cff; --hide:#ff5a5a; --keep:#3ccf7a; }
@@ -40,43 +40,43 @@
 </head>
 <body>
 <header>
-  <div class="grp"><label>Cartella</label><select id="folder"></select></div>
-  <div class="grp"><label>Modalità</label>
-    <button id="mAuto" class="on">Automatica</button><button id="mMan">A mano</button></div>
-  <div class="grp"><label>Effetto</label>
-    <button id="eBlur" class="on">Sfocatura</button><button id="eSil">Sagoma</button>
-    <input type="color" id="color" value="#3a3a3a" title="Colore sagoma">
-    <input type="range" id="strength" min="1" max="12" value="7" title="Intensità sfocatura"></div>
-  <div class="grp"><label>Strumento</label>
-    <button id="tClick" class="on" title="C">Clic persona</button>
-    <button id="tBrush" title="B">Pennello copri</button>
-    <button id="tErase" title="G">Gomma scopri</button>
-    <input type="range" id="size" min="5" max="200" value="40" title="Dimensione pennello"></div>
+  <div class="grp"><label>Folder</label><select id="folder"></select></div>
+  <div class="grp"><label>Mode</label>
+    <button id="mAuto" class="on">Automatic</button><button id="mMan">Manual</button></div>
+  <div class="grp"><label>Effect</label>
+    <button id="eBlur" class="on">Blur</button><button id="eSil">Silhouette</button>
+    <input type="color" id="color" value="#3a3a3a" title="Silhouette colour">
+    <input type="range" id="strength" min="1" max="12" value="7" title="Blur strength"></div>
+  <div class="grp"><label>Tool</label>
+    <button id="tClick" class="on" title="C">Click person</button>
+    <button id="tBrush" title="B">Brush (cover)</button>
+    <button id="tErase" title="E">Eraser (uncover)</button>
+    <input type="range" id="size" min="5" max="200" value="40" title="Brush size"></div>
   <div class="grp" style="margin-left:auto">
     <button id="prev" title="←">◀</button>
     <span id="pos" class="muted">–</span>
-    <button id="skip" title="→">Salta ▶</button>
-    <button id="save" class="primary" title="Invio">Conferma e salva ⏎</button></div>
+    <button id="skip" title="→">Skip ▶</button>
+    <button id="save" class="primary" title="Enter">Confirm and save ⏎</button></div>
 </header>
 <main>
   <div id="stage"><canvas id="view"></canvas><div id="msg"></div></div>
   <aside>
     <div id="fname" style="word-break:break-all;font-weight:600">–</div>
     <div id="status" class="muted"></div>
-    <label><input type="checkbox" id="autoSkip"> Salta da sola le foto senza altre persone (modalità automatica)</label>
-    <label><input type="checkbox" id="hideDone" checked> Salta le foto già salvate</label>
-    <div><b>Persone trovate</b> <span class="muted">(clic per cambiare)</span></div>
+    <label><input type="checkbox" id="autoSkip"> Automatically skip photos with no other people (automatic mode)</label>
+    <label><input type="checkbox" id="hideDone" checked> Skip photos already saved</label>
+    <div><b>People found</b> <span class="muted">(click to toggle)</span></div>
     <div id="items"></div>
     <div class="muted" style="font-size:12px;line-height:1.6">
-      <span style="color:var(--hide)">■</span> rosso = viene coperta<br>
-      <span style="color:var(--keep)">■</span> verde = resta visibile<br>
-      Il numero è la somiglianza con te: il volto più simile, se ≥ <span id="thrv"></span>, sei tu.<br><br>
-      <kbd>⏎</kbd> salva · <kbd>→</kbd> salta · <kbd>←</kbd> indietro<br>
-      <kbd>C</kbd> clic · <kbd>B</kbd> pennello · <kbd>G</kbd> gomma<br>
-      <kbd>Ctrl+Z</kbd> annulla pennellata · tieni <kbd>O</kbd> per vedere l'originale<br>
-      <kbd>[</kbd> <kbd>]</kbd> dimensione pennello
+      <span style="color:var(--hide)">■</span> red = will be covered<br>
+      <span style="color:var(--keep)">■</span> green = stays visible<br>
+      The number is the similarity to you: the most similar face, if ≥ <span id="thrv"></span>, is you.<br><br>
+      <kbd>⏎</kbd> save · <kbd>→</kbd> skip · <kbd>←</kbd> back<br>
+      <kbd>C</kbd> click · <kbd>B</kbd> brush · <kbd>E</kbd> eraser<br>
+      <kbd>Ctrl+Z</kbd> undo stroke · hold <kbd>O</kbd> to see the original<br>
+      <kbd>[</kbd> <kbd>]</kbd> brush size
     </div>
-    <div class="muted" style="font-size:12px">Gli originali non vengono toccati: i risultati vanno nella cartella <i>Foto oscurate</i>.</div>
+    <div class="muted" style="font-size:12px">Originals are never touched: results go to the <i>Obscured photos</i> folder.</div>
   </aside>
 </main>
 <div id="brushCursor"></div>
@@ -99,7 +99,7 @@ function setOn(ids, on) { ids.forEach(i => $(i).classList.toggle("on", i === on)
 async function loadFolders() {
   const fs = await (await fetch("/api/folders")).json();
   $("folder").innerHTML = fs.map(f => `<option>${f}</option>`).join("");
-  if (fs.includes("Le mie foto")) $("folder").value = "Le mie foto";
+  if (fs.includes("My photos")) $("folder").value = "My photos";
   await loadList();
 }
 async function loadList() {
@@ -114,19 +114,19 @@ function nextIdx(from, dir) {
 }
 
 async function show() {
-  if (!files.length) { $("fname").textContent = "Nessuna foto in questa cartella"; return; }
+  if (!files.length) { $("fname").textContent = "No photos in this folder"; return; }
   const f = files[idx];
   $("pos").textContent = `${idx + 1} / ${files.length}`;
   $("fname").textContent = f.name;
-  $("status").textContent = "analisi in corso…";
+  $("status").textContent = "analysing…";
   data = null;
   const d = await (await fetch("/api/analyze?" + q(f.name))).json();
   const im = new Image(); im.src = "/img?" + q(f.name); await im.decode();
-  if (files[idx] !== f) return;           // nel frattempo si è passati ad un'altra foto
+  if (files[idx] !== f) return;           // we moved on to another photo in the meantime
   data = d; img = im;
   for (const c of [view, maskC, effC, blurC, addC, keepC]) { c.width = d.w; c.height = d.h; }
   undo = [];
-  // sei tu: il volto più simile della foto se supera la soglia (più eventuali altri molto simili)
+  // you are: the most similar face in the photo if above the threshold (plus any others that are very similar)
   const best = Math.max(-1, ...d.items.map(i => i.score ?? -1));
   for (const it of d.items) {
     it.me = it.score !== null && it.score >= THR && (it.score === best || it.score >= 0.55);
@@ -134,11 +134,11 @@ async function show() {
   }
   makeBlur();
   const others = d.items.filter(i => i.hide).length;
-  $("status").textContent = (f.done ? "già salvata · " : "") +
-    `${d.items.length} persone, ${d.items.filter(i => i.me).length} sei tu`;
+  $("status").textContent = (f.done ? "already saved · " : "") +
+    `${d.items.length} people, ${d.items.filter(i => i.me).length} of them you`;
   render(); renderItems();
   for (const k of [1, 2]) if (files[idx + k]) fetch("/api/prefetch?" + q(files[idx + k].name));
-  if (mode === "auto" && $("autoSkip").checked && others === 0) { msg("nessun'altra persona: salto"); go(1); }
+  if (mode === "auto" && $("autoSkip").checked && others === 0) { msg("no other people: skipping"); go(1); }
 }
 
 function makeBlur() {
@@ -159,7 +159,7 @@ function buildMask() {
   m.fillStyle = m.strokeStyle = "#fff"; m.lineWidth = grow * 2; m.lineJoin = "round";
   for (const it of data.items) if (it.hide) { m.fill(pathOf(it)); m.stroke(pathOf(it)); }
   m.globalCompositeOperation = "destination-out";
-  for (const it of data.items) if (!it.hide) m.fill(pathOf(it));      // proteggi chi resta visibile
+  for (const it of data.items) if (!it.hide) m.fill(pathOf(it));      // protect whoever stays visible
   m.globalCompositeOperation = "source-over"; m.drawImage(addC, 0, 0);
   m.globalCompositeOperation = "destination-out"; m.drawImage(keepC, 0, 0);
   m.globalCompositeOperation = "source-over";
@@ -194,15 +194,15 @@ function renderItems() {
   data.items.forEach(it => {
     const d = document.createElement("div");
     d.className = "item " + (it.hide ? "hide" : "keep");
-    d.innerHTML = `<span>Persona ${it.id + 1}${it.me ? " (tu)" : ""}</span>
-      <span class="muted">${it.score === null ? "volto non visibile" : it.score.toFixed(2)}</span>`;
+    d.innerHTML = `<span>Person ${it.id + 1}${it.me ? " (you)" : ""}</span>
+      <span class="muted">${it.score === null ? "face not visible" : it.score.toFixed(2)}</span>`;
     d.onclick = () => { it.hide = !it.hide; render(); renderItems(); };
     d.onmouseenter = () => { render(); ctx.lineWidth = Math.max(4, data.w / 250);
       ctx.strokeStyle = "#ffd84f"; ctx.stroke(pathOf(it)); };
     d.onmouseleave = render;
     $("items").appendChild(d);
   });
-  if (!data.items.length) $("items").innerHTML = '<div class="muted">nessuna persona rilevata — usa il pennello se serve</div>';
+  if (!data.items.length) $("items").innerHTML = '<div class="muted">no people detected — use the brush if needed</div>';
 }
 
 function pt(ev) { const r = view.getBoundingClientRect();
@@ -226,7 +226,7 @@ view.addEventListener("mousedown", ev => {
 });
 function paint(p) {
   stroke(drawing[0], last, p);
-  // il pennello cancella la gomma e viceversa, così l'ultima passata vince
+  // the brush erases the eraser and vice versa, so the last pass wins
   const o = drawing[1].getContext("2d"); o.globalCompositeOperation = "destination-out";
   stroke(drawing[1], last, p); o.globalCompositeOperation = "source-over";
   last = p; requestAnimationFrame(render);
@@ -253,7 +253,7 @@ $("color").oninput = () => { if (effect !== "sil") $("eSil").click(); else rende
 $("strength").oninput = () => { if (data) { makeBlur(); render(); } };
 $("folder").onchange = loadList;
 
-function go(dir) { const n = nextIdx(idx, dir); if (n !== idx) { idx = n; show(); } else msg(dir > 0 ? "ultima foto" : "prima foto"); }
+function go(dir) { const n = nextIdx(idx, dir); if (n !== idx) { idx = n; show(); } else msg(dir > 0 ? "last photo" : "first photo"); }
 $("prev").onclick = () => go(-1);
 $("skip").onclick = () => go(1);
 $("save").onclick = save;
@@ -265,12 +265,12 @@ async function save() {
   fd.append("folder", $("folder").value); fd.append("name", files[idx].name);
   fd.append("mode", effect); fd.append("color", $("color").value); fd.append("strength", $("strength").value);
   fd.append("mask", blob, "mask.png");
-  $("status").textContent = "salvataggio…";
+  $("status").textContent = "saving…";
   const r = await fetch("/api/save", { method: "POST", body: fd });
-  if (!r.ok) { $("status").textContent = "ERRORE nel salvataggio"; return; }
+  if (!r.ok) { $("status").textContent = "ERROR while saving"; return; }
   const j = await r.json();
   files[idx].done = true;
-  msg(j.copied ? "salvata (nessuna modifica, copiata così com'è)" : "salvata");
+  msg(j.copied ? "saved (no changes, copied as is)" : "saved");
   go(1);
 }
 
@@ -281,7 +281,7 @@ window.addEventListener("keydown", ev => {
   else if (ev.key === "ArrowLeft") go(-1);
   else if (ev.key === "c") setTool("click");
   else if (ev.key === "b") setTool("brush");
-  else if (ev.key === "g") setTool("erase");
+  else if (ev.key === "e") setTool("erase");
   else if (ev.key === "o" && !showOrig) { showOrig = true; render(); }
   else if (ev.key === "[") $("size").value = +$("size").value - 5;
   else if (ev.key === "]") $("size").value = +$("size").value + 5;

@@ -1,4 +1,4 @@
-# dati personali e modelli scaricati: non vanno mai pubblicati
+# personal data and downloaded models: never publish these
 ref_emb.npy
 *.npy
 *.pt

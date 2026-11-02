@@ -4,5 +4,5 @@ opencv-python
 pillow
 pillow-heif
 insightface
-onnxruntime-gpu   # oppure onnxruntime se non hai una GPU NVIDIA
+onnxruntime-gpu   # or onnxruntime if you don't have an NVIDIA GPU
 ultralytics
