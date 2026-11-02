@@ -1,0 +1,8 @@
+flask
+numpy
+opencv-python
+pillow
+pillow-heif
+insightface
+onnxruntime-gpu   # oppure onnxruntime se non hai una GPU NVIDIA
+ultralytics

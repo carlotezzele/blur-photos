@@ -1,0 +1,5 @@
+# dati personali e modelli scaricati: non vanno mai pubblicati
+ref_emb.npy
+*.npy
+*.pt
+__pycache__/
