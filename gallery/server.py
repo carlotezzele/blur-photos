@@ -1,8 +1,11 @@
 """Gallery of "All photos" with women blurred automatically, served on the local network.
 
 Start:  python gallery/server.py "/path/From Google"
-Originals are never modified: the analysis goes to gallery/cache, corrections to
-gallery/corrections.json, and exported photos to "From Google/Blurred photos".
+The analysis goes to gallery/cache and corrections to gallery/corrections.json.
+At every start the page asks where exported photos go (changeable at any time from the header):
+  - "folder":  originals untouched, blurred copies in "From Google/Blurred photos"
+  - "replace": blurred photos overwrite the originals in "All photos"; a pristine copy of each
+               original is kept in "From Google/Originals (backup)/All photos", so corrections and un-blurring still work.
 """
 import io, os, json, secrets, shutil, threading, queue, time
 import numpy as np, cv2
@@ -25,6 +28,7 @@ TRASH = os.path.join(BASE, "To delete")
 MINE = os.path.join(BASE, "My photos")
 DESTS = {"del": TRASH, "mine": MINE}
 OUT = os.environ.get("GALLERY_OUT", os.path.join(BASE, "Blurred photos"))
+BACKUP = os.path.join(BASE, "Originals (backup)", os.path.basename(SRC))     # same layout as app.py: backups are shared
 VIDEO_EXTS = {".mov", ".mp4"}         # Live Photo videos, moved together with their photo
 CACHE = os.path.join(HERE, "cache")
 EXTS = {".jpg", ".jpeg", ".png", ".heic"}
@@ -67,11 +71,20 @@ def save_json(path, data):
     os.replace(tmp, path)
 
 
+SETTINGS_FILE = os.path.join(HERE, "settings.json")
+SETTINGS = load_json(SETTINGS_FILE)
+ASKED = False           # the output choice is asked again at every start
 FIXES = load_json(FIX_FILE)
 EXPORTED = load_json(EXP_FILE)
 
 NAMES = sorted(n for n in os.listdir(SRC) if os.path.splitext(n)[1].lower() in EXTS)
 NAMESET = set(NAMES)
+
+
+def original(name):
+    """The untouched original: the backup if the photo was already replaced in place."""
+    bk = os.path.join(BACKUP, name)
+    return bk if os.path.exists(bk) else os.path.join(SRC, name)
 
 
 def paths(name):
@@ -135,7 +148,7 @@ def analyze(name):
         if is_done(name):
             return
         try:
-            im = ImageOps.exif_transpose(Image.open(os.path.join(SRC, name))).convert("RGB")
+            im = ImageOps.exif_transpose(Image.open(original(name))).convert("RGB")
         except Exception as e:
             json.dump({"error": str(e), "people": []}, open(js_p, "w"))
             count(name)
@@ -236,7 +249,7 @@ def render(name, unknown, full, orig):
     return buf.tobytes()
 
 
-# --- full-resolution export to "Blurred photos" ---
+# --- full-resolution export: to "Blurred photos" or in place ---
 LOWER = {n.lower() for n in NAMES}
 export_lock = threading.Lock()
 EXPORT = {"running": False, "done": 0, "todo": 0, "errors": 0}
@@ -250,15 +263,27 @@ def out_name(name):
     return stem + ("-heic.jpg" if (stem + ".jpg").lower() in LOWER else ".jpg")
 
 
-def export_one(name, unknown):
+def export_one(name, unknown, mode):
     jpg_p, lab_p, js_p = paths(name)
     info = json.load(open(js_p))
-    src = os.path.join(SRC, name)
-    dst = os.path.join(OUT, out_name(name))
+    here, bk = os.path.join(SRC, name), os.path.join(BACKUP, name)
+    if mode == "replace":
+        if not os.path.exists(bk):          # keep the untouched original before the first overwrite
+            os.makedirs(BACKUP, exist_ok=True)
+            shutil.copy2(here, bk)
+        src, dst, out = bk, here, name
+    else:
+        if os.path.exists(bk):              # switched back from "replace": put the original back
+            shutil.copy2(bk, here)
+            os.remove(bk)
+        os.makedirs(OUT, exist_ok=True)
+        src, dst, out = here, os.path.join(OUT, out_name(name)), out_name(name)
     st = os.stat(src)
     sel = selected(info, unknown)
-    if not sel and out_name(name) == name:
+    if not sel and out_name(name) == out:
         shutil.copy2(src, dst)              # nothing to blur: identical copy
+    elif not sel and mode == "replace":
+        shutil.copy2(src, dst)              # nothing (left) to blur: restore the original
     else:
         orig = Image.open(src)
         exif = orig.getexif()
@@ -267,35 +292,49 @@ def export_one(name, unknown):
             bgr = blur_people(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), cv2.imread(lab_p, cv2.IMREAD_UNCHANGED), sel)
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         res = Image.fromarray(rgb)
-        if dst.lower().endswith(".png"):
-            res.save(dst, "PNG")
+        exif[0x0112] = 1                    # the image is already upright
+        ext, tmp = os.path.splitext(dst)[1].lower(), dst + ".tmp"
+        if ext == ".png":
+            res.save(tmp, "PNG")
+        elif ext == ".heic":
+            res.save(tmp, "HEIF", quality=95, exif=exif.tobytes())
         else:
-            exif[0x0112] = 1                # the image is already upright
-            res.save(dst, "JPEG", quality=95, exif=exif.tobytes())
+            res.save(tmp, "JPEG", quality=95, exif=exif.tobytes())
+        os.replace(tmp, dst)                # never leave a half-written photo
         os.utime(dst, (st.st_atime, st.st_mtime))
-    EXPORTED[name] = {"v": info.get("v", 0), "u": int(unknown), "out": out_name(name)}
+    EXPORTED[name] = {"v": info.get("v", 0), "u": int(unknown), "mode": mode, "out": out}
 
 
-def up_to_date(name, unknown):
+def mode_now():
+    return SETTINGS.get("output") if ASKED else None
+
+
+def up_to_date(name, unknown, mode):
     e = EXPORTED.get(name)
-    return e is not None and e["v"] == INFO[name]["v"] and e["u"] == int(unknown)
+    return (e is not None and e["v"] == INFO[name]["v"] and e["u"] == int(unknown)
+            and e.get("mode", "folder") == mode)
+
+
+def present(name, mode):
+    """The exported result is still where it should be."""
+    if mode == "replace":
+        return os.path.exists(os.path.join(BACKUP, name))
+    return os.path.exists(os.path.join(OUT, out_name(name)))
 
 
 def exportable():
     return [n for n in NAMES if n in NAMESET and n in INFO and not INFO[n]["err"]]
 
 
-def export_job(unknown):
-    os.makedirs(OUT, exist_ok=True)
-    todo = [n for n in exportable()
-            if not up_to_date(n, unknown) or not os.path.exists(os.path.join(OUT, out_name(n)))]
+def export_job(unknown, mode):
+    todo = [n for n in exportable() if not up_to_date(n, unknown, mode) or not present(n, mode)]
     EXPORT.update(done=0, todo=len(todo), errors=0)
     try:
         for i, n in enumerate(todo):
             if n not in NAMESET:
                 continue
             try:
-                export_one(n, unknown)
+                export_one(n, unknown, mode)
             except Exception as e:
                 EXPORT["errors"] += 1
                 print("export error", n, e, flush=True)
@@ -310,9 +349,17 @@ def export_job(unknown):
 def drop_export(name):
     """The photo was moved out of "All photos": remove its blurred copy too."""
     e = EXPORTED.pop(name, None)
-    if e and os.path.exists(os.path.join(OUT, e["out"])):
+    if e and e.get("mode", "folder") == "folder" and os.path.exists(os.path.join(OUT, e["out"])):
         os.remove(os.path.join(OUT, e["out"]))
     save_json(EXP_FILE, EXPORTED)
+
+
+def restore_original(name):
+    """If the photo was replaced in place, put the untouched original back (so moves carry the original)."""
+    bk = os.path.join(BACKUP, name)
+    if os.path.exists(bk):
+        shutil.copy2(bk, os.path.join(SRC, name))
+        os.remove(bk)
 
 
 app = Flask(__name__, static_folder=None)
@@ -366,6 +413,7 @@ def api_trash():
         files = companions(name)
         if any(os.path.exists(os.path.join(dest, f)) for f in files):
             abort(409)          # a file with the same name already exists: don't overwrite
+        restore_original(name)
         for f in files:
             shutil.move(os.path.join(SRC, f), os.path.join(dest, f))
         NAMESET.discard(name)
@@ -403,19 +451,42 @@ def api_status():
         if n in NAMESET and not is_done(n):
             urgent.put(n)
     unknown = request.args.get("u", "1") == "1"
-    stale = sum(1 for n in exportable() if not up_to_date(n, unknown))
+    mode = mode_now()
+    stale = sum(1 for n in exportable() if not up_to_date(n, unknown, mode)) if mode else 0
     return jsonify(info={n: c for n, c in INFO.items() if n in NAMESET}, total=len(NAMESET),
-                   export=dict(EXPORT, stale=stale))
+                   export=dict(EXPORT, stale=stale, mode=mode))
+
+
+@app.get("/api/settings")
+def get_settings():
+    return jsonify(output=SETTINGS.get("output"), asked=ASKED,
+                   out=os.path.basename(OUT), src=os.path.basename(SRC),
+                   backup=os.path.relpath(BACKUP, BASE).replace(os.sep, "/"))
+
+
+@app.post("/api/settings")
+def set_settings():
+    global ASKED
+    out = (request.get_json() or {}).get("output")
+    if out not in ("folder", "replace") or EXPORT["running"]:
+        abort(400 if out not in ("folder", "replace") else 409)
+    SETTINGS["output"] = out
+    ASKED = True
+    save_json(SETTINGS_FILE, SETTINGS)
+    return get_settings()
 
 
 @app.post("/api/export")
 def api_export():
-    """Export (or update) every analysed photo to "Blurred photos", with corrections applied."""
+    """Export (or update) every analysed photo, with corrections applied, according to the output setting."""
     unknown = bool(request.get_json().get("u", 1))
+    mode = mode_now()
+    if mode is None:
+        abort(409)                          # output not chosen yet in this run
     with export_lock:
         if not EXPORT["running"]:
             EXPORT["running"] = True
-            threading.Thread(target=export_job, args=(unknown,), daemon=True).start()
+            threading.Thread(target=export_job, args=(unknown, mode), daemon=True).start()
     return jsonify(EXPORT)
 
 

@@ -34,6 +34,14 @@
   #msg { position:absolute; top:14px; left:50%; transform:translateX(-50%); background:#000c; padding:6px 12px;
          border-radius:6px; display:none; }
   kbd { background:#2a2e36; border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:12px; }
+  #outDlg { position:fixed; inset:0; z-index:50; background:#000b; display:none; align-items:center; justify-content:center; padding:16px; }
+  #outDlg.open { display:flex; }
+  #outDlg .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px; max-width:460px; width:100%; }
+  #outDlg h2 { margin:0 0 6px; font-size:17px; }
+  #outDlg .opt { display:block; width:100%; text-align:left; margin-top:10px; padding:12px; }
+  #outDlg .opt b { display:block; margin-bottom:3px; }
+  #outDlg .opt span { color:var(--muted); font-size:13px; }
+  #outDlg .opt.cur { border-color:var(--accent); }
   #brushCursor { position:fixed; pointer-events:none; border:1px solid #fff; border-radius:50%;
                  box-shadow:0 0 0 1px #000; display:none; }
 </style>
@@ -41,6 +49,7 @@
 <body>
 <header>
   <div class="grp"><label>Folder</label><select id="folder"></select></div>
+  <div class="grp"><label>Save to</label><button id="outBtn" title="Change where results are saved">…</button></div>
   <div class="grp"><label>Mode</label>
     <button id="mAuto" class="on">Automatic</button><button id="mMan">Manual</button></div>
   <div class="grp"><label>Effect</label>
@@ -76,10 +85,16 @@
       <kbd>Ctrl+Z</kbd> undo stroke · hold <kbd>O</kbd> to see the original<br>
       <kbd>[</kbd> <kbd>]</kbd> brush size
     </div>
-    <div class="muted" style="font-size:12px">Originals are never touched: results go to the <i>Obscured photos</i> folder.</div>
+    <div class="muted" style="font-size:12px" id="outNote"></div>
   </aside>
 </main>
 <div id="brushCursor"></div>
+<div id="outDlg"><div class="box">
+  <h2>Where should the results go?</h2>
+  <div class="muted">You can change this at any time with the <i>Save to</i> button at the top.</div>
+  <button class="opt" data-out="folder"><b>Separate folder</b><span>Originals stay untouched. Results go to <i id="dOut"></i>.</span></button>
+  <button class="opt" data-out="replace"><b>Replace the photos</b><span>Results overwrite the originals in their folder. A copy of each original is kept in <i id="dBk"></i>, so you can re-edit or restore it.</span></button>
+</div></div>
 <script>
 const THR = 0.35;
 const $ = id => document.getElementById(id);
@@ -260,6 +275,7 @@ $("save").onclick = save;
 async function save() {
   if (!data) return;
   showOrig = false; buildMask();
+  if (!outMode) { askOut(); return; }
   const blob = await new Promise(r => maskC.toBlob(r, "image/png"));
   const fd = new FormData();
   fd.append("folder", $("folder").value); fd.append("name", files[idx].name);
@@ -267,14 +283,44 @@ async function save() {
   fd.append("mask", blob, "mask.png");
   $("status").textContent = "saving…";
   const r = await fetch("/api/save", { method: "POST", body: fd });
+  if (r.status === 409) { askOut(); return; }
   if (!r.ok) { $("status").textContent = "ERROR while saving"; return; }
   const j = await r.json();
   files[idx].done = true;
-  msg(j.copied ? "saved (no changes, copied as is)" : "saved");
+  msg(outMode === "replace" ? (j.copied ? "original restored (nothing to cover)" : "photo replaced")
+                            : (j.copied ? "saved (no changes, copied as is)" : "saved"));
   go(1);
 }
 
+let outMode = null, outNames = {};
+function showOut() {
+  $("outBtn").textContent = outMode === "replace" ? "Replace photos" : outMode === "folder" ? "Separate folder" : "choose…";
+  $("outNote").innerHTML = !outMode ? "Choose where to save with the <i>Save to</i> button." : outMode === "replace"
+    ? `Saving <b>replaces the original photos</b>. Untouched copies are kept in <i>${outNames.backup}</i>.`
+    : `Originals are never touched: results go to the <i>${outNames.out}</i> folder.`;
+  document.querySelectorAll("#outDlg .opt").forEach(b => b.classList.toggle("cur", b.dataset.out === (outMode || outNames.output)));
+}
+function askOut() { $("outDlg").classList.add("open"); }
+$("outBtn").onclick = askOut;
+document.querySelectorAll("#outDlg .opt").forEach(b => b.onclick = async () => {
+  const r = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" },
+                                           body: JSON.stringify({ output: b.dataset.out }) });
+  if (!r.ok) return;
+  const changed = outMode !== b.dataset.out;
+  outMode = b.dataset.out; showOut();
+  $("outDlg").classList.remove("open");
+  if (changed && files.length) { const keep = files[idx]?.name; await loadList(); const i = files.findIndex(f => f.name === keep); if (i >= 0) { idx = i; show(); } }
+});
+(async () => {
+  const st = await (await fetch("/api/settings")).json();
+  outNames = st; outMode = st.asked ? st.output : null;
+  $("dOut").textContent = st.out; $("dBk").textContent = st.backup;
+  showOut();
+  if (!st.asked) askOut();
+})();
+
 window.addEventListener("keydown", ev => {
+  if ($("outDlg").classList.contains("open")) return;
   if (ev.target.tagName === "SELECT" || ev.target.type === "range") return;
   if (ev.key === "Enter") { ev.preventDefault(); save(); }
   else if (ev.key === "ArrowRight") go(1);

@@ -2,9 +2,12 @@
 
 Start:  python app.py "/path/to/the/folder/with/the/photo/subfolders"
 Then open http://localhost:5055 (it opens by itself).
-Originals are never modified: results go to "<folder>/Obscured photos".
+At every start the page asks where results go (changeable at any time from the header):
+  - "folder":  originals untouched, results in "<folder>/Obscured photos"
+  - "replace": results overwrite the originals; a pristine copy of each original is kept in
+               "<folder>/Originals (backup)" so a photo can be re-edited or restored.
 """
-import io, os, sys, shutil, threading, subprocess, webbrowser
+import io, os, sys, json, shutil, threading, subprocess, webbrowser
 import numpy as np, cv2
 import onnxruntime as ort
 if hasattr(ort, "preload_dlls"):
@@ -19,6 +22,14 @@ from ultralytics import YOLO
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("OSCURA_BASE", "."))
 OUT = os.environ.get("OSCURA_OUT", os.path.join(BASE, "Obscured photos"))
+BACKUP = os.path.join(BASE, "Originals (backup)")
+SPECIAL = {os.path.basename(OUT), os.path.basename(BACKUP)}
+SETTINGS_FILE = os.path.join(HERE, "settings.json")
+try:
+    SETTINGS = json.load(open(SETTINGS_FILE))
+except Exception:
+    SETTINGS = {}
+ASKED = False             # the choice is asked again at every start
 EXTS = {".jpg", ".jpeg", ".png", ".heic"}
 WORK_SIDE = 2000          # working resolution for analysis and preview
 PORT = 5055
@@ -44,6 +55,16 @@ def folder_path(folder):
 
 def list_images(folder):
     return sorted(n for n in os.listdir(folder_path(folder)) if os.path.splitext(n)[1].lower() in EXTS)
+
+
+def backup_path(folder, name):
+    return os.path.join(BACKUP, os.path.basename(folder_path(folder)), name)
+
+
+def source(folder, name):
+    """The untouched original: the backup if the photo was already replaced in place."""
+    bk = backup_path(folder, name)
+    return bk if os.path.exists(bk) else os.path.join(folder_path(folder), name)
 
 
 def out_name(name):
@@ -80,7 +101,7 @@ def analyze(folder, name):
         with cache_lock:
             if key in cache:
                 return cache[key]
-        im = open_full(os.path.join(folder_path(folder), name))
+        im = open_full(source(folder, name))
         im.thumbnail((WORK_SIDE, WORK_SIDE))
         rgb = np.asarray(im)
         h, w = rgb.shape[:2]
@@ -131,15 +152,37 @@ def index():
 
 @app.get("/api/folders")
 def folders():
-    fs = sorted(d for d in os.listdir(BASE) if os.path.isdir(os.path.join(BASE, d)) and d != "Obscured photos")
+    fs = sorted(d for d in os.listdir(BASE) if os.path.isdir(os.path.join(BASE, d)) and d not in SPECIAL)
     return jsonify(fs)
 
 
 @app.get("/api/list")
 def api_list():
     folder = request.args["folder"]
+    if SETTINGS.get("output") == "replace":
+        bk = os.path.join(BACKUP, os.path.basename(folder_path(folder)))
+        done = set(os.listdir(bk)) if os.path.isdir(bk) else set()
+        return jsonify([{"name": n, "done": n in done} for n in list_images(folder)])
     done = set(os.listdir(OUT)) if os.path.isdir(OUT) else set()
     return jsonify([{"name": n, "done": out_name(n) in done} for n in list_images(folder)])
+
+
+@app.get("/api/settings")
+def get_settings():
+    return jsonify(output=SETTINGS.get("output"), asked=ASKED,
+                   out=os.path.basename(OUT), backup=os.path.basename(BACKUP))
+
+
+@app.post("/api/settings")
+def set_settings():
+    global ASKED
+    out = (request.get_json() or {}).get("output")
+    if out not in ("folder", "replace"):
+        abort(400)
+    SETTINGS["output"] = out
+    ASKED = True
+    json.dump(SETTINGS, open(SETTINGS_FILE, "w"))
+    return get_settings()
 
 
 @app.get("/api/analyze")
@@ -165,14 +208,25 @@ def api_save():
     folder, name = request.form["folder"], request.form["name"]
     if name not in list_images(folder):
         abort(400)
-    src = os.path.join(folder_path(folder), name)
-    os.makedirs(OUT, exist_ok=True)
-    dst = os.path.join(OUT, out_name(name))
+    if not ASKED:
+        abort(409)                      # output mode not chosen yet in this run
+    replace = SETTINGS["output"] == "replace"
+    target = os.path.join(folder_path(folder), name)
+    if replace:
+        bk = backup_path(folder, name)
+        if not os.path.exists(bk):      # keep the untouched original before the first overwrite
+            os.makedirs(os.path.dirname(bk), exist_ok=True)
+            shutil.copy2(target, bk)
+        src, dst = bk, target
+    else:
+        src = source(folder, name)
+        os.makedirs(OUT, exist_ok=True)
+        dst = os.path.join(OUT, out_name(name))
     st = os.stat(src)
 
     alpha = np.asarray(Image.open(request.files["mask"].stream).convert("RGBA"))[:, :, 3]
-    if alpha.max() == 0 and out_name(name) == name:
-        shutil.copy2(src, dst)          # nothing to cover: identical copy
+    if alpha.max() == 0 and (replace or out_name(name) == name):
+        shutil.copy2(src, dst)          # nothing to cover: identical copy (or original restored)
         return jsonify(ok=True, copied=True)
 
     orig = Image.open(src)
@@ -197,11 +251,16 @@ def api_save():
     out = np.clip(img * (1 - m) + eff * m, 0, 255).astype(np.uint8)
 
     res = Image.fromarray(out)
-    if dst.lower().endswith(".png"):
-        res.save(dst, "PNG")
+    exif[0x0112] = 1            # the image is already upright
+    ext = os.path.splitext(dst)[1].lower()
+    tmp = dst + ".tmp"
+    if ext == ".png":
+        res.save(tmp, "PNG")
+    elif ext == ".heic":
+        res.save(tmp, "HEIF", quality=95, exif=exif.tobytes())
     else:
-        exif[0x0112] = 1        # the image is already upright
-        res.save(dst, "JPEG", quality=95, exif=exif.tobytes())
+        res.save(tmp, "JPEG", quality=95, exif=exif.tobytes())
+    os.replace(tmp, dst)        # never leave a half-written photo
     os.utime(dst, (st.st_atime, st.st_mtime))
     return jsonify(ok=True, copied=False)
 

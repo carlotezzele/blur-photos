@@ -6,7 +6,10 @@ A local program that **blurs or covers with a silhouette** every person in a pho
 - **Automatic mode**: prepares the cover for everyone else and asks you to confirm photo by photo.
 - **Manual mode**: start from scratch and pick who to cover with a click, or with brush and eraser.
 - Two effects: **blur** (adjustable strength) or a solid-colour **silhouette** with the same shape as the person.
-- Originals are never modified. Results go to `Obscured photos/`, with date and EXIF preserved.
+- **You choose where results go** each time the program starts, and can change it at any time with the *Save to* button:
+  - **Separate folder**: originals are untouched, results go to `Obscured photos/`.
+  - **Replace the photos**: results overwrite the originals in place (same name and format, HEIC included). Before the first overwrite, each original is copied to `Originals (backup)/<folder>/`, so you can re-edit a photo from the untouched version, or restore it by saving with nothing covered.
+- Date and EXIF are preserved.
 - Everything runs locally, in the browser: no photo ever leaves your computer.
 
 ## Installation
@@ -72,6 +75,7 @@ These are the scripts used around the main program to organise a Google Photos e
 ```
 From Google/
 ├── All photos/       every photo, flattened
+├── Originals (backup)/  untouched originals, when "Replace the photos" is used (shared by both programs)
 ├── My photos/        photos you appear in
 ├── To delete/        photos to delete later (created by the gallery)
 └── Blurred photos/   blurred copies exported by the gallery
@@ -101,7 +105,7 @@ Then move the matches you've confirmed into `My photos`.
 
 - **Mark errors** (`E`): tap a person to flip them between blurred and visible. Corrections are saved in `gallery/corrections.json`.
 - **I'm in it** (`M`) moves the photo to `My photos`, and **To delete** (`X`) moves it to `To delete`. Both have undo, and Live Photo videos move along with their photo. Nothing is ever deleted.
-- **Export blurred photos** writes full-resolution blurred copies, with EXIF preserved, to `Blurred photos/`. Originals are never modified.
+- **Export blurred photos** writes full-resolution blurred photos with EXIF preserved. At startup the page asks where they go, and you can change it at any time with *Save to*. **Separate folder** writes copies to `Blurred photos/` and never modifies the originals. **Replace the photos** overwrites them in `All photos`, keeping each untouched original in `Originals (backup)/All photos/`. With replace, corrections and un-blurring still work: re-exporting starts from the backup. Switching back to separate folder and exporting puts the originals back. Moving a replaced photo with *I'm in it* or *To delete* moves the original, not the blurred version.
 
 ```bash
 pip install torch open_clip_torch      # only needed once, for the export below
