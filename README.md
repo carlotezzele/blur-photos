@@ -53,8 +53,13 @@ With an NVIDIA GPU, face recognition uses CUDA. Otherwise replace `onnxruntime-g
 | `[` `]` | brush size |
 | `Ctrl+Z` | undo the last brush stroke |
 | hold `O` | show the original |
+| `Delete` | **Delete** the photo: moves it to the Recycle Bin, with its Live Photo video, backup and result (asks first) |
 
 The number next to each person shows how closely their face resembles yours. The most similar face in the photo, if it scores above 0.35, is taken to be you.
+
+## Deleting photos
+
+Both programs only ever send photos to the **Recycle Bin**, never delete them permanently, so you can restore them from there. Under WSL with photos on a Windows drive they use the Windows Recycle Bin. Elsewhere they use the system trash, which needs the `send2trash` package. If no trash is available, nothing is deleted.
 
 ## Limitations
 
@@ -105,6 +110,7 @@ Then move the matches you've confirmed into `My photos`.
 
 - **Mark errors** (`E`): tap a person to flip them between blurred and visible. Corrections are saved in `gallery/corrections.json`.
 - **I'm in it** (`M`) moves the photo to `My photos`, and **To delete** (`X`) moves it to `To delete`. Both have undo, and Live Photo videos move along with their photo. Nothing is ever deleted.
+- **Delete** (`Shift+Delete`) moves the photo to the Recycle Bin, together with its Live Photo video, backup and blurred copy. It asks for confirmation first. *To delete* (`X`) only moves the photo into a folder.
 - **Export blurred photos** writes full-resolution blurred photos with EXIF preserved. At startup the page asks where they go, and you can change it at any time with *Save to*. **Separate folder** writes copies to `Blurred photos/` and never modifies the originals. **Replace the photos** overwrites them in `All photos`, keeping each untouched original in `Originals (backup)/All photos/`. With replace, corrections and un-blurring still work: re-exporting starts from the backup. Switching back to separate folder and exporting puts the originals back. Moving a replaced photo with *I'm in it* or *To delete* moves the original, not the blurred version.
 
 ```bash

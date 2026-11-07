@@ -6,3 +6,4 @@ pillow-heif
 insightface
 onnxruntime-gpu   # or onnxruntime if you don't have an NVIDIA GPU
 ultralytics
+send2trash        # Recycle Bin / Trash outside WSL

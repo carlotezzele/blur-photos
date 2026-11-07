@@ -48,6 +48,7 @@
   .tag .fx { color:#f0c36a; }
   #view button.mine { border-color:#2f6b4c; color:var(--ok); }
   #view button.del { border-color:#7a3340; color:#f08a9c; }
+  #view button.rm { border-color:#a33a4c; background:#3a1d23; color:#ff9aab; }
   #toast { position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%); z-index:20;
            background:#26292f; border:1px solid var(--line); border-radius:8px; padding:10px 14px; display:none;
            gap:14px; align-items:center; box-shadow:0 6px 24px rgba(0,0,0,.5); max-width:calc(100% - 32px); }
@@ -90,7 +91,8 @@
     <button id="mark" title="key E">Mark errors</button>
     <button id="orig" title="hold O">Original</button>
     <button id="mine" class="mine" title="key M">I'm in it</button>
-    <button id="del" class="del" title="key X">To delete</button>
+    <button id="del" class="del" title="key X: move to the “To delete” folder">To delete</button>
+    <button id="rm" class="rm" title="Shift+Delete: move to the Recycle Bin">Delete</button>
     <button id="close">Close</button>
   </div>
   <div id="stage"><img id="big" alt=""><svg id="ov" preserveAspectRatio="xMidYMid meet"></svg><div class="nav l"></div><div class="nav r"></div></div>
@@ -281,6 +283,20 @@ document.querySelectorAll("#outDlg .opt").forEach(b => b.onclick = async () => {
   toast(outMode === "replace" ? "Export will now replace the original photos" : `Export will now go to “${outNames.out}”`, false);
 });
 $("#del").onclick = () => trash("del");
+$("#rm").onclick = delPhoto;
+async function delPhoto() {
+  const n = shown[cur]; if (!n) return;
+  if (!confirm(`Move “${n}” to the Recycle Bin?\n\nIts Live Photo video, backup copy and blurred copy (if any) go too.`)) return;
+  const r = await fetch("api/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: n }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { toast("Not deleted: " + (d.error || "error " + r.status), false); return; }
+  names = names.filter(x => x !== n);
+  shown = shown.filter(x => x !== n);
+  const el = cells.get(n); if (el) { io.unobserve(el); el.remove(); cells.delete(n); }
+  if (lastMove && lastMove.name === n) lastMove = null;
+  toast(`Moved to the Recycle Bin${d.files.length > 1 ? ` (${d.files.length} files)` : ""}`, false);
+  if (!shown.length) close(); else { cur = Math.min(cur, shown.length - 1); show(); }
+}
 $("#mine").onclick = () => trash("mine");
 $("#undo").onclick = untrash;
 $("#mark").onclick = () => { marking = !marking; show(); };
@@ -293,6 +309,7 @@ document.addEventListener("keydown", e => {
   else if (e.key === "Escape") close();
   else if (e.key === "o" && !e.repeat) { showOrig = true; show(); }
   else if (e.key === "e") { marking = !marking; show(); }
+  else if (e.key === "Delete" && e.shiftKey) { e.preventDefault(); delPhoto(); }
   else if (e.key === "x" || e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); trash("del"); }
   else if (e.key === "m") trash("mine");
   else if (e.key === "z" && (e.metaKey || e.ctrlKey)) untrash();

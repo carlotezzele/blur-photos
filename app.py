@@ -18,6 +18,7 @@ pillow_heif.register_heif_opener()
 from flask import Flask, jsonify, request, send_file, abort
 from insightface.app import FaceAnalysis
 from ultralytics import YOLO
+from trash import recycle, TrashUnavailable
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("OSCURA_BASE", "."))
@@ -31,6 +32,7 @@ except Exception:
     SETTINGS = {}
 ASKED = False             # the choice is asked again at every start
 EXTS = {".jpg", ".jpeg", ".png", ".heic"}
+VIDEO_EXTS = {".mov", ".mp4"}         # Live Photo videos, deleted together with their photo
 WORK_SIDE = 2000          # working resolution for analysis and preview
 PORT = 5055
 
@@ -263,6 +265,29 @@ def api_save():
     os.replace(tmp, dst)        # never leave a half-written photo
     os.utime(dst, (st.st_atime, st.st_mtime))
     return jsonify(ok=True, copied=False)
+
+
+@app.post("/api/delete")
+def api_delete():
+    """Send the photo to the Recycle Bin, with its Live Photo video, its backup and its result."""
+    d = request.get_json()
+    folder, name = d["folder"], d["name"]
+    if name not in list_images(folder):
+        abort(400)
+    fp = folder_path(folder)
+    stem = os.path.splitext(name)[0]
+    files = [os.path.join(fp, name)] + [os.path.join(fp, f) for f in sorted(os.listdir(fp))
+                                        if os.path.splitext(f)[0] == stem and os.path.splitext(f)[1].lower() in VIDEO_EXTS]
+    files += [backup_path(folder, name), os.path.join(OUT, out_name(name))]
+    try:
+        done = recycle(files)
+    except TrashUnavailable as e:
+        return jsonify(ok=False, error=str(e)), 501
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)), 500
+    with cache_lock:
+        cache.pop((folder, name), None)
+    return jsonify(ok=True, files=[os.path.relpath(p, BASE) for p in done])
 
 
 def open_browser(url):

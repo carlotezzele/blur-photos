@@ -17,6 +17,7 @@ pillow_heif.register_heif_opener()
 from flask import Flask, jsonify, request, send_file, abort, make_response
 from insightface.app import FaceAnalysis
 from ultralytics import YOLO
+from trash import recycle, TrashUnavailable
 import torch
 torch.set_num_threads(4)        # leave some CPU free for the web server
 
@@ -421,6 +422,30 @@ def api_trash():
     with open(os.path.join(HERE, "moved.log"), "a") as f:
         f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\tmoved to {os.path.basename(dest)}\t{' | '.join(files)}\n")
     return jsonify(ok=True, files=files)
+
+
+@app.post("/api/delete")
+def api_delete():
+    """Send the photo to the Recycle Bin, with its Live Photo video, its backup and its blurred copy."""
+    name = request.get_json()["name"]
+    with move_lock:
+        if name not in NAMESET or not os.path.exists(os.path.join(SRC, name)):
+            abort(400)
+        e = EXPORTED.get(name) or {}
+        files = [os.path.join(SRC, f) for f in companions(name)] + [os.path.join(BACKUP, name)]
+        files.append(os.path.join(OUT, e["out"] if e.get("mode", "folder") == "folder" and e.get("out") else out_name(name)))
+        try:
+            done = recycle(files)
+        except TrashUnavailable as ex:
+            return jsonify(ok=False, error=str(ex)), 501
+        except Exception as ex:
+            return jsonify(ok=False, error=str(ex)), 500
+        NAMESET.discard(name)
+        EXPORTED.pop(name, None)
+        save_json(EXP_FILE, EXPORTED)
+    with open(os.path.join(HERE, "moved.log"), "a") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\tsent to the Recycle Bin\t{' | '.join(os.path.relpath(p, BASE) for p in done)}\n")
+    return jsonify(ok=True, files=[os.path.relpath(p, BASE) for p in done])
 
 
 @app.post("/api/untrash")
