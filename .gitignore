@@ -4,11 +4,11 @@ ref_emb.npy
 *.pt
 __pycache__/
 *.onnx
-cache_femmine/
-*_token.txt
+gallery/cache/
+token.txt
 *.log
 *.csv
 cand.txt
-correzioni_femmine.json
-export_femmine.json
+corrections.json
+exported.json
 t_*.jpg

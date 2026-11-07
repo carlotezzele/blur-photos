@@ -1,3 +1,4 @@
+"""Shared helpers: InsightFace (buffalo_l) on the GPU when available, and an EXIF-aware image loader."""
 import numpy as np, cv2, os
 import onnxruntime as ort
 ort.preload_dlls()
@@ -12,12 +13,14 @@ app.prepare(ctx_id=0, det_size=(640, 640))
 
 
 def load(path, max_side=2000):
+    """Open an image (HEIC included), apply the EXIF rotation, downscale, return BGR."""
     im = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     im.thumbnail((max_side, max_side))
     return cv2.cvtColor(np.asarray(im), cv2.COLOR_RGB2BGR)
 
 
 def faces(img):
+    """List of (embedding, bbox, face size in px, detection score) for every face found."""
     out = []
     for f in app.get(img):
         e = f.normed_embedding

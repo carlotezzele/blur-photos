@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Foto sfocate</title>
+<title>Blurred photos</title>
 <style>
   :root { --bg:#111214; --panel:#1b1d21; --line:#2c2f35; --text:#e8e8ea; --dim:#9a9ca3; --acc:#e0607e; --ok:#5fb98a; }
   * { box-sizing:border-box; }
@@ -63,11 +63,11 @@
 </head>
 <body>
 <header>
-  <h1>Tutte le foto</h1>
-  <div class="bar"><small id="prog">Analisi…</small><div class="track"><i id="pbar"></i></div></div>
-  <label><input type="checkbox" id="onlyF"> Solo foto con donne</label>
-  <label><input type="checkbox" id="unk" checked> Sfoca anche i casi incerti</label>
-  <div class="exp"><button id="exp">Esporta foto sfocate</button><small id="expinfo"></small></div>
+  <h1>All photos</h1>
+  <div class="bar"><small id="prog">Analysing…</small><div class="track"><i id="pbar"></i></div></div>
+  <label><input type="checkbox" id="onlyF"> Only photos with women</label>
+  <label><input type="checkbox" id="unk" checked> Also blur uncertain cases</label>
+  <div class="exp"><button id="exp">Export blurred photos</button><small id="expinfo"></small></div>
 </header>
 <div id="grid"></div>
 
@@ -75,17 +75,17 @@
   <div class="top">
     <span class="name" id="vname"></span>
     <span id="vinfo"></span>
-    <button id="mark" title="tasto E">Segna errori</button>
-    <button id="orig" title="tieni premuto O">Originale</button>
-    <button id="mine" class="mine" title="tasto M">Ci sono io</button>
-    <button id="del" class="del" title="tasto X">Da eliminare</button>
-    <button id="close">Chiudi</button>
+    <button id="mark" title="key E">Mark errors</button>
+    <button id="orig" title="hold O">Original</button>
+    <button id="mine" class="mine" title="key M">I'm in it</button>
+    <button id="del" class="del" title="key X">To delete</button>
+    <button id="close">Close</button>
   </div>
   <div id="stage"><img id="big" alt=""><svg id="ov" preserveAspectRatio="xMidYMid meet"></svg><div class="nav l"></div><div class="nav r"></div></div>
-  <div id="hint">Tocca una persona per correggerla: <i class="r">rosso = sfocata</i> · <i class="g">verde = visibile</i> · tratteggio = corretta da te</div>
+  <div id="hint">Tap a person to correct them: <i class="r">red = blurred</i> · <i class="g">green = visible</i> · dashed = corrected by you</div>
 </div>
 
-<div id="toast"><span id="tmsg"></span><button id="undo">Annulla</button></div>
+<div id="toast"><span id="tmsg"></span><button id="undo">Undo</button></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -96,9 +96,9 @@ const src = (n, full, o) => `img?name=${encodeURIComponent(n)}&u=${unk()}&v=${in
 
 function tagHtml(c) {
   const parts = [];
-  if (c.F) parts.push(`<b>${c.F} donn${c.F > 1 ? "e" : "a"}</b>`);
-  if (c.M) parts.push(`${c.M} uom${c.M > 1 ? "ini" : "o"}`);
-  if (c.U) parts.push(`${c.U} incert${c.U > 1 ? "i" : "o"}`);
+  if (c.F) parts.push(`<b>${c.F} wom${c.F > 1 ? "en" : "an"}</b>`);
+  if (c.M) parts.push(`${c.M} m${c.M > 1 ? "en" : "an"}`);
+  if (c.U) parts.push(`${c.U} uncertain`);
   if (c.fix) parts.push(`<span class="fx">✎ ${c.fix}</span>`);
   return parts.join(" · ");
 }
@@ -125,11 +125,11 @@ function fill(el) {
 function build() {
   const g = $("#grid"); g.innerHTML = ""; cells.clear();
   shown = $("#onlyF").checked ? names.filter(n => info[n]?.F) : names;
-  if (!shown.length) { g.innerHTML = `<div class="empty">Nessuna foto con donne trovata finora.</div>`; return; }
+  if (!shown.length) { g.innerHTML = `<div class="empty">No photos with women found so far.</div>`; return; }
   for (const [i, n] of shown.entries()) {
     const el = document.createElement("div");
     el.className = "cell"; el.dataset.n = n;
-    el.innerHTML = `<div class="wait">in analisi…</div><img alt=""><span class="tag" style="display:none"></span>`;
+    el.innerHTML = `<div class="wait">analysing…</div><img alt=""><span class="tag" style="display:none"></span>`;
     el.onclick = () => open(i);
     g.appendChild(el); cells.set(n, el); io.observe(el);
   }
@@ -138,12 +138,12 @@ function build() {
 function showExport(e) {
   const b = $("#exp"), t = $("#expinfo");
   if (e.running) {
-    b.disabled = true; b.textContent = "Esportazione…";
-    t.textContent = `${e.done} di ${e.todo}`;
+    b.disabled = true; b.textContent = "Exporting…";
+    t.textContent = `${e.done} of ${e.todo}`;
   } else {
-    b.disabled = !e.stale; b.textContent = "Esporta foto sfocate";
-    t.textContent = e.stale ? `${e.stale} da esportare o aggiornare` : "tutte esportate in “Foto sfocate” ✓";
-    if (e.errors) t.textContent += ` · ${e.errors} errori`;
+    b.disabled = !e.stale; b.textContent = "Export blurred photos";
+    t.textContent = e.stale ? `${e.stale} to export or update` : "all exported to “Blurred photos” ✓";
+    if (e.errors) t.textContent += ` · ${e.errors} errors`;
   }
 }
 async function poll() {
@@ -153,7 +153,7 @@ async function poll() {
     const d = await r.json(); info = d.info; total = d.total; showExport(d.export);
   } catch (e) {}
   const done = Object.keys(info).length;
-  $("#prog").textContent = done < total ? `Analizzate ${done} di ${total} foto` : `Tutte le ${total} foto analizzate`;
+  $("#prog").textContent = done < total ? `Analysed ${done} of ${total} photos` : `All ${total} photos analysed`;
   $("#pbar").style.width = (100 * done / Math.max(1, total)) + "%";
   for (const el of cells.values()) if (el._vis) fill(el);
   setTimeout(poll, 2500);
@@ -162,7 +162,7 @@ async function poll() {
 function show() {
   const n = shown[cur], c = info[n];
   $("#vname").textContent = `${cur + 1}/${shown.length} · ${n}`;
-  $("#vinfo").innerHTML = c ? tagHtml(c) : "in analisi…";
+  $("#vinfo").innerHTML = c ? tagHtml(c) : "analysing…";
   $("#orig").classList.toggle("act", showOrig);
   $("#mark").classList.toggle("act", marking);
   $("#view").classList.toggle("mark", marking);
@@ -182,7 +182,7 @@ async function drawPeople(n) {
     path.setAttribute("d", p.polys.map(q => "M" + q.join(" ") + "Z").join(""));
     path.setAttribute("class", (blurred ? "blur" : "keep") + (p.fixed ? " fixed" : ""));
     const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    t.textContent = `P(femmina) ${Math.round(p.pf * 100)}%` + (p.fixed ? " · corretta da te" : "");
+    t.textContent = `P(female) ${Math.round(p.pf * 100)}%` + (p.fixed ? " · corrected by you" : "");
     path.appendChild(t);
     path.onclick = e => { e.stopPropagation(); fix(n, p.id, blurred ? "M" : "F"); };
     ov.appendChild(path);
@@ -203,28 +203,28 @@ function toast(msg, undo) {
   $("#toast").classList.add("on");
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $("#toast").classList.remove("on"), 8000);
 }
-const DEST = { del: "Da eliminare", mine: "Le mie foto" };
+const DEST = { del: "To delete", mine: "My photos" };
 async function trash(to = "del") {
   const n = shown[cur]; if (!n) return;
   const r = await fetch("api/trash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: n, to }) });
-  if (!r.ok) { toast(r.status === 409 ? `In “${DEST[to]}” c'è già un file con questo nome` : "Spostamento non riuscito", false); return; }
+  if (!r.ok) { toast(r.status === 409 ? `“${DEST[to]}” already has a file with this name` : "Move failed", false); return; }
   const d = await r.json();
   lastMove = { name: n, files: d.files, pos: names.indexOf(n), to };
   names.splice(lastMove.pos, 1);
   shown = shown.filter(x => x !== n);
   const el = cells.get(n); if (el) { io.unobserve(el); el.remove(); cells.delete(n); }
-  toast(`Spostata in “${DEST[to]}”${d.files.length > 1 ? " (con il video)" : ""}`, true);
+  toast(`Moved to “${DEST[to]}”${d.files.length > 1 ? " (with its video)" : ""}`, true);
   if (!shown.length) close(); else { cur = Math.min(cur, shown.length - 1); show(); }
 }
 async function untrash() {
   const m = lastMove; if (!m) return;
   const r = await fetch("api/untrash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) });
-  if (!r.ok) { toast("Non sono riuscito a rimetterla a posto", false); return; }
+  if (!r.ok) { toast("Couldn't put it back", false); return; }
   lastMove = null;
   names.splice(m.pos, 0, m.name);
   const wasOpen = $("#view").classList.contains("open");
   build();
-  toast("Rimessa in “Tutte le foto”", false);
+  toast("Put back in “All photos”", false);
   const i = shown.indexOf(m.name);
   if (wasOpen && i >= 0) { cur = i; show(); }
 }

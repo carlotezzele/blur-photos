@@ -1,8 +1,8 @@
-"""Galleria di "Tutte le foto" con le donne sfocate in automatico.
+"""Gallery of "All photos" with women blurred automatically, served on the local network.
 
-Avvio:  python gallery/femmine.py "/percorso/From Google"
-Gli originali non vengono mai modificati: l'analisi va in gallery/cache_femmine,
-le correzioni in gallery/correzioni_femmine.json, le foto esportate in "From Google/Foto sfocate".
+Start:  python gallery/server.py "/path/From Google"
+Originals are never modified: the analysis goes to gallery/cache, corrections to
+gallery/corrections.json, and exported photos to "From Google/Blurred photos".
 """
 import io, os, json, secrets, shutil, threading, queue, time
 import numpy as np, cv2
@@ -15,43 +15,43 @@ from flask import Flask, jsonify, request, send_file, abort, make_response
 from insightface.app import FaceAnalysis
 from ultralytics import YOLO
 import torch
-torch.set_num_threads(4)        # lascia CPU libera al server web
+torch.set_num_threads(4)        # leave some CPU free for the web server
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 import sys
-BASE = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PHOTOS_BASE", ".")   # cartella con "Tutte le foto"
-SRC = os.path.join(BASE, "Tutte le foto")
-TRASH = os.path.join(BASE, "Da eliminare")
-MINE = os.path.join(BASE, "Le mie foto")
+BASE = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PHOTOS_BASE", ".")   # folder containing "All photos"
+SRC = os.path.join(BASE, "All photos")
+TRASH = os.path.join(BASE, "To delete")
+MINE = os.path.join(BASE, "My photos")
 DESTS = {"del": TRASH, "mine": MINE}
-OUT = os.environ.get("FEMMINE_OUT", os.path.join(BASE, "Foto sfocate"))
-VIDEO_EXTS = {".mov", ".mp4"}         # video delle Live Photo, si spostano insieme alla foto
-CACHE = os.path.join(HERE, "cache_femmine")
+OUT = os.environ.get("GALLERY_OUT", os.path.join(BASE, "Blurred photos"))
+VIDEO_EXTS = {".mov", ".mp4"}         # Live Photo videos, moved together with their photo
+CACHE = os.path.join(HERE, "cache")
 EXTS = {".jpg", ".jpeg", ".png", ".heic"}
 SIDE = 1600
 PORT = 5056
 os.makedirs(CACHE, exist_ok=True)
 
-tok_file = os.path.join(HERE, "femmine_token.txt")
+tok_file = os.path.join(HERE, "token.txt")
 if not os.path.exists(tok_file):
     open(tok_file, "w").write(secrets.token_urlsafe(9))
 TOKEN = open(tok_file).read().strip()
 
-print("carico i modelli...", flush=True)
+print("loading models...", flush=True)
 gpu = [("CUDAExecutionProvider", {"device_id": 0}), "CPUExecutionProvider"]
 face_app = FaceAnalysis(name="buffalo_l", allowed_modules=["detection"], providers=gpu)
 face_app.prepare(ctx_id=0, det_size=(640, 640))
 _yolo = os.path.join(HERE, "yolo11m-seg.pt")
-seg = YOLO(_yolo if os.path.exists(_yolo) else "yolo11m-seg.pt")    # scaricato al primo avvio
+seg = YOLO(_yolo if os.path.exists(_yolo) else "yolo11m-seg.pt")    # downloaded on first start
 clip = ort.InferenceSession(os.path.join(HERE, "clip_vitl14.onnx"), providers=gpu)
-CLIP_TEXT = np.load(os.path.join(HERE, "clip_text.npy"))      # [femmina, maschio]
+CLIP_TEXT = np.load(os.path.join(HERE, "clip_text.npy"))      # [female, male]
 CLIP_MEAN = np.array([0.48145466, 0.4578275, 0.40821073], np.float32)
 CLIP_STD = np.array([0.26862954, 0.26130258, 0.27577711], np.float32)
-UNSURE = (0.3, 0.7)     # P(femmina) in questo intervallo = caso incerto
+UNSURE = (0.3, 0.7)     # P(female) inside this range = uncertain
 model_lock = threading.Lock()
 fix_lock = threading.Lock()
-FIX_FILE = os.path.join(HERE, "correzioni_femmine.json")     # nome -> {indice persona: "F"/"M"}
-EXP_FILE = os.environ.get("FEMMINE_EXP", os.path.join(HERE, "export_femmine.json"))        # nome -> {"v", "u", "out"} dell'ultima esportazione
+FIX_FILE = os.path.join(HERE, "corrections.json")     # name -> {person index: "F"/"M"}
+EXP_FILE = os.environ.get("GALLERY_EXP", os.path.join(HERE, "exported.json"))        # name -> {"v", "u", "out"} of the last export
 
 
 def load_json(path):
@@ -79,11 +79,11 @@ def paths(name):
     return b + ".jpg", b + ".lab.png", b + ".json"
 
 
-INFO = {}      # nome -> conteggi {"F","M","U"} per le foto gia' analizzate
+INFO = {}      # name -> counts {"F","M","U"} for photos already analysed
 
 
 def eff(p):
-    """Genere effettivo: la correzione dell'utente vince sulla stima."""
+    """Effective sex: the user's correction wins over the estimate."""
     return p.get("fix", p["sex"])
 
 
@@ -103,7 +103,7 @@ def is_done(name):
 
 
 def female_prob(rgb, masks):
-    """P(femmina) per ogni persona: CLIP guarda la sagoma intera (capelli, corpo, vestiti) su sfondo grigio."""
+    """P(female) for each person: CLIP looks at the whole silhouette (hair, body, clothes) on a grey background."""
     if not masks:
         return []
     batch = []
@@ -129,7 +129,7 @@ def female_prob(rgb, masks):
 
 
 def analyze(name):
-    """Persone (maschere) + genere stimato da CLIP. Salva anteprima, mappa etichette e json."""
+    """People (masks) + sex estimated by CLIP. Saves preview, label map and json."""
     jpg_p, lab_p, js_p = paths(name)
     with model_lock:
         if is_done(name):
@@ -152,17 +152,17 @@ def analyze(name):
             x1, y1, x2, y2 = f.bbox
             cx, cy = int(np.clip((x1 + x2) / 2, 0, w - 1)), int(np.clip((y1 + y2) / 2, 0, h - 1))
             if not any(m[cy, cx] for m in masks):
-                # volto senza corpo rilevato: ellisse attorno alla testa
+                # face with no detected body: ellipse around the head
                 m = np.zeros((h, w), np.uint8)
                 cv2.ellipse(m, (cx, cy), (int((x2 - x1) * 0.8), int((y2 - y1) * 0.9)), 0, 0, 360, 1, -1)
                 masks.append(m.astype(bool))
         pf = female_prob(rgb, masks)
         people = [{"pf": round(p, 3), "sex": "F" if p >= UNSURE[1] else "M" if p < UNSURE[0] else None} for p in pf]
-        for i, sex in FIXES.get(name, {}).items():      # riapplica le correzioni se la cache era stata cancellata
+        for i, sex in FIXES.get(name, {}).items():      # re-apply corrections if the cache was deleted
             if int(i) < len(people) and sex != people[int(i)]["sex"]:
                 people[int(i)]["fix"] = sex
 
-        # mappa etichette: 0 = sfondo, i+1 = persona i; le maschere piu' piccole vincono sulle sovrapposizioni
+        # label map: 0 = background, i+1 = person i; smaller masks win where they overlap
         lab = np.zeros((h, w), np.uint8)
         for i in sorted(range(len(masks)), key=lambda i: -masks[i].sum())[:254]:
             lab[masks[i]] = i + 1
@@ -172,7 +172,7 @@ def analyze(name):
     count(name)
 
 
-# --- coda: analizza tutto in background, le foto richieste dal browser passano davanti ---
+# --- queue: analyse everything in the background, photos requested by the browser jump the queue ---
 urgent = queue.LifoQueue()
 
 
@@ -190,7 +190,7 @@ def worker():
             try:
                 analyze(name)
             except Exception as e:
-                print("errore", name, e, flush=True)
+                print("error", name, e, flush=True)
 
 
 def selected(info, unknown):
@@ -198,7 +198,7 @@ def selected(info, unknown):
 
 
 def blur_people(img, lab, sel):
-    """Sfoca le persone con etichetta in sel. lab viene portata alla risoluzione di img."""
+    """Blur the people whose label is in sel. lab is resized to the resolution of img."""
     H, W = img.shape[:2]
     if lab.shape[:2] != (H, W):
         lab = cv2.resize(lab, (W, H), interpolation=cv2.INTER_NEAREST)
@@ -223,7 +223,7 @@ def render(name, unknown, full, orig):
     sel = [] if orig else selected(info, unknown)
     lab = cv2.imread(lab_p, cv2.IMREAD_UNCHANGED) if sel else None
     if not full:
-        # miniatura: rimpicciolisci prima di sfocare, costa molto meno
+        # thumbnail: downscale before blurring, much cheaper
         s = 400 / max(img.shape[:2])
         img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
         if sel:
@@ -236,7 +236,7 @@ def render(name, unknown, full, orig):
     return buf.tobytes()
 
 
-# --- esportazione a piena risoluzione in "Foto sfocate" ---
+# --- full-resolution export to "Blurred photos" ---
 LOWER = {n.lower() for n in NAMES}
 export_lock = threading.Lock()
 EXPORT = {"running": False, "done": 0, "todo": 0, "errors": 0}
@@ -246,7 +246,7 @@ def out_name(name):
     stem, ext = os.path.splitext(name)
     if ext.lower() in {".jpg", ".jpeg", ".png"}:
         return name
-    # HEIC -> JPG; se esiste gia' una foto con lo stesso nome .jpg non la sovrascrivo
+    # HEIC -> JPG; if a .jpg with the same name already exists, don't overwrite it
     return stem + ("-heic.jpg" if (stem + ".jpg").lower() in LOWER else ".jpg")
 
 
@@ -258,7 +258,7 @@ def export_one(name, unknown):
     st = os.stat(src)
     sel = selected(info, unknown)
     if not sel and out_name(name) == name:
-        shutil.copy2(src, dst)              # niente da sfocare: copia identica
+        shutil.copy2(src, dst)              # nothing to blur: identical copy
     else:
         orig = Image.open(src)
         exif = orig.getexif()
@@ -270,7 +270,7 @@ def export_one(name, unknown):
         if dst.lower().endswith(".png"):
             res.save(dst, "PNG")
         else:
-            exif[0x0112] = 1                # l'immagine e' gia' raddrizzata
+            exif[0x0112] = 1                # the image is already upright
             res.save(dst, "JPEG", quality=95, exif=exif.tobytes())
         os.utime(dst, (st.st_atime, st.st_mtime))
     EXPORTED[name] = {"v": info.get("v", 0), "u": int(unknown), "out": out_name(name)}
@@ -298,7 +298,7 @@ def export_job(unknown):
                 export_one(n, unknown)
             except Exception as e:
                 EXPORT["errors"] += 1
-                print("errore esportazione", n, e, flush=True)
+                print("export error", n, e, flush=True)
             EXPORT["done"] = i + 1
             if i % 20 == 0:
                 save_json(EXP_FILE, EXPORTED)
@@ -308,7 +308,7 @@ def export_job(unknown):
 
 
 def drop_export(name):
-    """La foto e' stata spostata via da "Tutte le foto": tolgo anche la sua copia sfocata."""
+    """The photo was moved out of "All photos": remove its blurred copy too."""
     e = EXPORTED.pop(name, None)
     if e and os.path.exists(os.path.join(OUT, e["out"])):
         os.remove(os.path.join(OUT, e["out"]))
@@ -334,7 +334,7 @@ def set_cookie(resp):
 
 @app.get("/")
 def index():
-    return send_file(os.path.join(HERE, "femmine.html"))
+    return send_file(os.path.join(HERE, "index.html"))
 
 
 @app.get("/api/list")
@@ -343,7 +343,7 @@ def api_list():
 
 
 def companions(name):
-    """La foto e l'eventuale video della Live Photo con lo stesso nome."""
+    """The photo plus any Live Photo video with the same name."""
     stem = os.path.splitext(name)[0]
     return [name] + sorted(f for f in os.listdir(SRC)
                            if os.path.splitext(f)[0] == stem and os.path.splitext(f)[1].lower() in VIDEO_EXTS)
@@ -354,7 +354,7 @@ move_lock = threading.Lock()
 
 @app.post("/api/trash")
 def api_trash():
-    """Sposta l'originale (e il video della Live Photo) in "Da eliminare" o "Le mie foto". Non cancella niente."""
+    """Move the original (and its Live Photo video) to "To delete" or "My photos". Never deletes anything."""
     d = request.get_json()
     name, dest = d["name"], DESTS.get(d.get("to", "del"))
     if dest is None:
@@ -365,19 +365,19 @@ def api_trash():
         os.makedirs(dest, exist_ok=True)
         files = companions(name)
         if any(os.path.exists(os.path.join(dest, f)) for f in files):
-            abort(409)          # c'e' gia' un file con lo stesso nome: non sovrascrivo
+            abort(409)          # a file with the same name already exists: don't overwrite
         for f in files:
             shutil.move(os.path.join(SRC, f), os.path.join(dest, f))
         NAMESET.discard(name)
         drop_export(name)
-    with open(os.path.join(HERE, "spostate_femmine.log"), "a") as f:
-        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\tspostata in {os.path.basename(dest)}\t{' | '.join(files)}\n")
+    with open(os.path.join(HERE, "moved.log"), "a") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\tmoved to {os.path.basename(dest)}\t{' | '.join(files)}\n")
     return jsonify(ok=True, files=files)
 
 
 @app.post("/api/untrash")
 def api_untrash():
-    """Annulla: rimette i file in "Tutte le foto"."""
+    """Undo: put the files back in "All photos"."""
     d = request.get_json()
     name, files, dest = d["name"], d["files"], DESTS.get(d.get("to", "del"))
     if dest is None:
@@ -392,8 +392,8 @@ def api_untrash():
         for f in files:
             shutil.move(os.path.join(dest, f), os.path.join(SRC, f))
         NAMESET.add(name)
-    with open(os.path.join(HERE, "spostate_femmine.log"), "a") as f:
-        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\trimessa da {os.path.basename(dest)}\t{' | '.join(files)}\n")
+    with open(os.path.join(HERE, "moved.log"), "a") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\trestored from {os.path.basename(dest)}\t{' | '.join(files)}\n")
     return jsonify(ok=True)
 
 
@@ -410,7 +410,7 @@ def api_status():
 
 @app.post("/api/export")
 def api_export():
-    """Esporta (o aggiorna) tutte le foto analizzate in "Foto sfocate", con le correzioni."""
+    """Export (or update) every analysed photo to "Blurred photos", with corrections applied."""
     unknown = bool(request.get_json().get("u", 1))
     with export_lock:
         if not EXPORT["running"]:
@@ -421,7 +421,7 @@ def api_export():
 
 @app.get("/api/people")
 def api_people():
-    """Contorni delle persone di una foto, per segnare gli errori."""
+    """Outlines of the people in a photo, used to mark errors."""
     name = request.args.get("name", "")
     if name not in NAMESET or not is_done(name):
         abort(404)
@@ -439,7 +439,7 @@ def api_people():
 
 @app.post("/api/fix")
 def api_fix():
-    """Segna un errore: sex = "F" (va sfocata), "M" (va lasciata visibile) o null (torna alla stima)."""
+    """Mark an error: sex = "F" (blur), "M" (keep visible) or null (back to the estimate)."""
     d = request.get_json()
     name, i, sex = d["name"], int(d["id"]), d.get("sex")
     if name not in NAMESET or not is_done(name) or sex not in ("F", "M", None):
@@ -464,8 +464,8 @@ def api_fix():
             if os.path.exists(f"{jpg_p[:-4]}.t{t}.jpg"):
                 os.remove(f"{jpg_p[:-4]}.t{t}.jpg")
         count(name)
-    with open(os.path.join(HERE, "correzioni_femmine.log"), "a") as f:
-        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{name}\t{i}\tstima={p['sex']}\tpf={p['pf']}\tcorretto={sex}\n")
+    with open(os.path.join(HERE, "corrections.log"), "a") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{name}\t{i}\testimate={p['sex']}\tpf={p['pf']}\tcorrected={sex}\n")
     return jsonify(INFO[name])
 
 
@@ -486,11 +486,11 @@ if __name__ == "__main__":
     for n in NAMES:
         if os.path.exists(paths(n)[2]):
             count(n)
-            # correzioni fatte prima che esistesse il file a parte: le copio li'
+            # corrections made before the separate file existed: copy them there
             for i, p in enumerate(json.load(open(paths(n)[2]))["people"]):
                 if "fix" in p:
                     FIXES.setdefault(n, {})[str(i)] = p["fix"]
     save_json(FIX_FILE, FIXES)
     threading.Thread(target=worker, daemon=True).start()
-    print(f"pronto: http://<ip>:{PORT}/?k={TOKEN}", flush=True)
+    print(f"ready: http://<ip>:{PORT}/?k={TOKEN}", flush=True)
     app.run(host="0.0.0.0", port=PORT, threaded=True)

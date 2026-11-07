@@ -1,10 +1,16 @@
+"""Extract every Google Takeout *.zip in a folder into a single "All photos" subfolder.
+
+Files with the same name get a numeric suffix (foo_1.jpg) instead of overwriting each other;
+byte-identical duplicates (same name, CRC and size) are skipped.
+Usage: python flatten.py "/path/From Google"
+"""
 import zipfile, glob, os, sys, shutil, time
 
 src = sys.argv[1]
-dst = os.path.join(src, "Tutte le foto")
+dst = os.path.join(src, "All photos")
 os.makedirs(dst, exist_ok=True)
 
-seen = {}  # basename lower -> list of (crc, size)
+seen = {}  # lowercase basename -> list of (crc, size)
 used = set(n.lower() for n in os.listdir(dst))
 written = skipped = 0
 for z in sorted(glob.glob(os.path.join(src, "*.zip"))):
@@ -31,5 +37,5 @@ for z in sorted(glob.glob(os.path.join(src, "*.zip"))):
             t = time.mktime(i.date_time + (0, 0, -1))
             os.utime(out, (t, t))
             written += 1
-    print("fatto:", os.path.basename(z), flush=True)
-print("scritti", written, "duplicati identici saltati", skipped)
+    print("done:", os.path.basename(z), flush=True)
+print("written", written, "| identical duplicates skipped", skipped)

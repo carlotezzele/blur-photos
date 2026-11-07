@@ -1,7 +1,11 @@
+"""Check (by CRC and size) that every file inside the Takeout zips exists in "All photos".
+
+Run it before deleting the zips. Usage: python verify.py "/path/From Google"
+"""
 import zipfile, glob, os, sys, zlib
 
 src = sys.argv[1]
-dst = os.path.join(src, "Tutte le foto")
+dst = os.path.join(src, "All photos")
 
 have = set()
 for name in os.listdir(dst):
@@ -18,5 +22,5 @@ for z in sorted(glob.glob(os.path.join(src, "*.zip"))):
         for i in f.infolist():
             if not i.is_dir() and (i.CRC, i.file_size) not in have:
                 missing += 1
-                print("MANCA:", z, i.filename)
-print("file estratti verificati:", len(have), "| mancanti:", missing)
+                print("MISSING:", z, i.filename)
+print("extracted files checked:", len(have), "| missing:", missing)
