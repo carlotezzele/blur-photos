@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Foto sfocate</title>
+<style>
+  :root { --bg:#111214; --panel:#1b1d21; --line:#2c2f35; --text:#e8e8ea; --dim:#9a9ca3; --acc:#e0607e; --ok:#5fb98a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:rgba(17,18,20,.92); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
+           border-bottom:1px solid var(--line); padding:10px 16px; display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; }
+  h1 { font-size:17px; margin:0; font-weight:600; }
+  .bar { flex:1 1 180px; min-width:160px; }
+  .bar small { color:var(--dim); }
+  .track { height:5px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:4px; }
+  .track i { display:block; height:100%; width:0; background:var(--acc); transition:width .4s; }
+  label { color:var(--dim); display:flex; gap:6px; align-items:center; cursor:pointer; user-select:none; -webkit-user-select:none; }
+  input[type=checkbox] { accent-color:var(--acc); width:17px; height:17px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:6px; padding:12px 16px 40px; }
+  .cell { position:relative; aspect-ratio:1; background:var(--panel); border-radius:6px; overflow:hidden; cursor:pointer; }
+  .cell img { width:100%; height:100%; object-fit:cover; display:block; opacity:0; transition:opacity .25s; }
+  .cell img.on { opacity:1; }
+  .cell .wait { position:absolute; inset:0; display:grid; place-items:center; color:var(--dim); font-size:12px; }
+  .tag { position:absolute; left:6px; bottom:6px; background:rgba(0,0,0,.65); border-radius:4px; padding:1px 6px; font-size:12px; }
+  .tag b { color:var(--acc); font-weight:600; }
+  #view { position:fixed; inset:0; z-index:10; background:#000; display:none; flex-direction:column; }
+  #view.open { display:flex; }
+  #view .top { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:10px 16px; padding-top:max(10px, env(safe-area-inset-top)); color:var(--dim); font-size:13px; }
+  #view .top .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #view button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  #view button.act { border-color:var(--acc); color:var(--acc); }
+  #stage { flex:1; min-height:0; position:relative; overflow:hidden; }
+  #big { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  .nav { position:absolute; top:0; bottom:0; width:22%; }
+  .nav.l { left:0; } .nav.r { right:0; }
+  #ov { position:absolute; inset:0; width:100%; height:100%; display:none; }
+  #view.mark #ov { display:block; }
+  #view.mark .nav { display:none; }
+  #ov path { stroke-width:3; vector-effect:non-scaling-stroke; cursor:pointer; fill-rule:evenodd; }
+  #ov path.blur { stroke:var(--acc); fill:rgba(224,96,126,.18); }
+  #ov path.keep { stroke:var(--ok); fill:rgba(95,185,138,.12); }
+  #ov path.fixed { stroke-dasharray:8 5; }
+  #ov path:hover { fill-opacity:2; }
+  #hint { display:none; text-align:center; color:var(--dim); font-size:13px; padding:6px 16px calc(8px + env(safe-area-inset-bottom)); }
+  #view.mark #hint { display:block; }
+  #hint i { font-style:normal; } #hint .r { color:var(--acc); } #hint .g { color:var(--ok); }
+  .tag .fx { color:#f0c36a; }
+  #view button.mine { border-color:#2f6b4c; color:var(--ok); }
+  #view button.del { border-color:#7a3340; color:#f08a9c; }
+  #toast { position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%); z-index:20;
+           background:#26292f; border:1px solid var(--line); border-radius:8px; padding:10px 14px; display:none;
+           gap:14px; align-items:center; box-shadow:0 6px 24px rgba(0,0,0,.5); max-width:calc(100% - 32px); }
+  #toast.on { display:flex; }
+  #toast span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #toast button { background:none; border:0; color:var(--acc); font:inherit; font-weight:600; cursor:pointer; padding:4px; }
+  .exp { display:flex; align-items:center; gap:10px; }
+  .exp small { color:var(--dim); }
+  #exp { background:var(--acc); color:#fff; border:0; border-radius:6px; padding:7px 12px; font:inherit; font-weight:600; cursor:pointer; }
+  #exp:disabled { background:var(--line); color:var(--dim); cursor:default; }
+  .empty { color:var(--dim); padding:40px 16px; text-align:center; grid-column:1/-1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tutte le foto</h1>
+  <div class="bar"><small id="prog">Analisi…</small><div class="track"><i id="pbar"></i></div></div>
+  <label><input type="checkbox" id="onlyF"> Solo foto con donne</label>
+  <label><input type="checkbox" id="unk" checked> Sfoca anche i casi incerti</label>
+  <div class="exp"><button id="exp">Esporta foto sfocate</button><small id="expinfo"></small></div>
+</header>
+<div id="grid"></div>
+
+<div id="view">
+  <div class="top">
+    <span class="name" id="vname"></span>
+    <span id="vinfo"></span>
+    <button id="mark" title="tasto E">Segna errori</button>
+    <button id="orig" title="tieni premuto O">Originale</button>
+    <button id="mine" class="mine" title="tasto M">Ci sono io</button>
+    <button id="del" class="del" title="tasto X">Da eliminare</button>
+    <button id="close">Chiudi</button>
+  </div>
+  <div id="stage"><img id="big" alt=""><svg id="ov" preserveAspectRatio="xMidYMid meet"></svg><div class="nav l"></div><div class="nav r"></div></div>
+  <div id="hint">Tocca una persona per correggerla: <i class="r">rosso = sfocata</i> · <i class="g">verde = visibile</i> · tratteggio = corretta da te</div>
+</div>
+
+<div id="toast"><span id="tmsg"></span><button id="undo">Annulla</button></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let names = [], info = {}, total = 0, shown = [], cur = -1, showOrig = false, marking = false;
+const cells = new Map();
+const unk = () => $("#unk").checked ? 1 : 0;
+const src = (n, full, o) => `img?name=${encodeURIComponent(n)}&u=${unk()}&v=${info[n]?.v || 0}${full ? "&full=1" : ""}${o ? "&o=1" : ""}`;
+
+function tagHtml(c) {
+  const parts = [];
+  if (c.F) parts.push(`<b>${c.F} donn${c.F > 1 ? "e" : "a"}</b>`);
+  if (c.M) parts.push(`${c.M} uom${c.M > 1 ? "ini" : "o"}`);
+  if (c.U) parts.push(`${c.U} incert${c.U > 1 ? "i" : "o"}`);
+  if (c.fix) parts.push(`<span class="fx">✎ ${c.fix}</span>`);
+  return parts.join(" · ");
+}
+
+const io = new IntersectionObserver(es => {
+  for (const e of es) {
+    const el = e.target; el._vis = e.isIntersecting;
+    if (e.isIntersecting) fill(el);
+  }
+}, { rootMargin: "600px" });
+
+function fill(el) {
+  const n = el.dataset.n, c = info[n];
+  const key = unk() + ":" + (c?.v || 0);
+  if (!c || el._loaded === key) return;
+  el._loaded = key;
+  const img = el.querySelector("img");
+  img.onload = () => { img.classList.add("on"); el.querySelector(".wait")?.remove(); };
+  img.src = src(n, false);
+  const t = tagHtml(c);
+  el.querySelector(".tag").innerHTML = t; el.querySelector(".tag").style.display = t ? "" : "none";
+}
+
+function build() {
+  const g = $("#grid"); g.innerHTML = ""; cells.clear();
+  shown = $("#onlyF").checked ? names.filter(n => info[n]?.F) : names;
+  if (!shown.length) { g.innerHTML = `<div class="empty">Nessuna foto con donne trovata finora.</div>`; return; }
+  for (const [i, n] of shown.entries()) {
+    const el = document.createElement("div");
+    el.className = "cell"; el.dataset.n = n;
+    el.innerHTML = `<div class="wait">in analisi…</div><img alt=""><span class="tag" style="display:none"></span>`;
+    el.onclick = () => open(i);
+    g.appendChild(el); cells.set(n, el); io.observe(el);
+  }
+}
+
+function showExport(e) {
+  const b = $("#exp"), t = $("#expinfo");
+  if (e.running) {
+    b.disabled = true; b.textContent = "Esportazione…";
+    t.textContent = `${e.done} di ${e.todo}`;
+  } else {
+    b.disabled = !e.stale; b.textContent = "Esporta foto sfocate";
+    t.textContent = e.stale ? `${e.stale} da esportare o aggiornare` : "tutte esportate in “Foto sfocate” ✓";
+    if (e.errors) t.textContent += ` · ${e.errors} errori`;
+  }
+}
+async function poll() {
+  const want = [...cells.values()].filter(el => el._vis && !info[el.dataset.n]).slice(0, 40).map(el => el.dataset.n);
+  try {
+    const r = await fetch(`api/status?u=${unk()}&want=` + encodeURIComponent(want.join("|")));
+    const d = await r.json(); info = d.info; total = d.total; showExport(d.export);
+  } catch (e) {}
+  const done = Object.keys(info).length;
+  $("#prog").textContent = done < total ? `Analizzate ${done} di ${total} foto` : `Tutte le ${total} foto analizzate`;
+  $("#pbar").style.width = (100 * done / Math.max(1, total)) + "%";
+  for (const el of cells.values()) if (el._vis) fill(el);
+  setTimeout(poll, 2500);
+}
+
+function show() {
+  const n = shown[cur], c = info[n];
+  $("#vname").textContent = `${cur + 1}/${shown.length} · ${n}`;
+  $("#vinfo").innerHTML = c ? tagHtml(c) : "in analisi…";
+  $("#orig").classList.toggle("act", showOrig);
+  $("#mark").classList.toggle("act", marking);
+  $("#view").classList.toggle("mark", marking);
+  if (c) $("#big").src = src(n, true, showOrig);
+  if (marking && c) drawPeople(n); else $("#ov").innerHTML = "";
+  for (const k of [1, 2]) { const m = shown[cur + k]; if (m && info[m]) new Image().src = src(m, true); }
+}
+async function drawPeople(n) {
+  const d = await (await fetch("api/people?name=" + encodeURIComponent(n))).json();
+  if (shown[cur] !== n) return;
+  const ov = $("#ov");
+  ov.setAttribute("viewBox", `0 0 ${d.w} ${d.h}`);
+  ov.innerHTML = "";
+  for (const p of d.people) {
+    const blurred = p.sex === "F" || (p.sex === null && unk());
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", p.polys.map(q => "M" + q.join(" ") + "Z").join(""));
+    path.setAttribute("class", (blurred ? "blur" : "keep") + (p.fixed ? " fixed" : ""));
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    t.textContent = `P(femmina) ${Math.round(p.pf * 100)}%` + (p.fixed ? " · corretta da te" : "");
+    path.appendChild(t);
+    path.onclick = e => { e.stopPropagation(); fix(n, p.id, blurred ? "M" : "F"); };
+    ov.appendChild(path);
+  }
+}
+async function fix(n, id, sex) {
+  const r = await fetch("api/fix", { method: "POST", headers: { "Content-Type": "application/json" },
+                                     body: JSON.stringify({ name: n, id, sex }) });
+  if (!r.ok) return;
+  info[n] = await r.json();
+  const el = cells.get(n); if (el) fill(el);
+  if (shown[cur] === n) show();
+}
+let lastMove = null, toastTimer = null;
+function toast(msg, undo) {
+  $("#tmsg").textContent = msg;
+  $("#undo").style.display = undo ? "" : "none";
+  $("#toast").classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $("#toast").classList.remove("on"), 8000);
+}
+const DEST = { del: "Da eliminare", mine: "Le mie foto" };
+async function trash(to = "del") {
+  const n = shown[cur]; if (!n) return;
+  const r = await fetch("api/trash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: n, to }) });
+  if (!r.ok) { toast(r.status === 409 ? `In “${DEST[to]}” c'è già un file con questo nome` : "Spostamento non riuscito", false); return; }
+  const d = await r.json();
+  lastMove = { name: n, files: d.files, pos: names.indexOf(n), to };
+  names.splice(lastMove.pos, 1);
+  shown = shown.filter(x => x !== n);
+  const el = cells.get(n); if (el) { io.unobserve(el); el.remove(); cells.delete(n); }
+  toast(`Spostata in “${DEST[to]}”${d.files.length > 1 ? " (con il video)" : ""}`, true);
+  if (!shown.length) close(); else { cur = Math.min(cur, shown.length - 1); show(); }
+}
+async function untrash() {
+  const m = lastMove; if (!m) return;
+  const r = await fetch("api/untrash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) });
+  if (!r.ok) { toast("Non sono riuscito a rimetterla a posto", false); return; }
+  lastMove = null;
+  names.splice(m.pos, 0, m.name);
+  const wasOpen = $("#view").classList.contains("open");
+  build();
+  toast("Rimessa in “Tutte le foto”", false);
+  const i = shown.indexOf(m.name);
+  if (wasOpen && i >= 0) { cur = i; show(); }
+}
+function open(i) { cur = i; showOrig = false; $("#view").classList.add("open"); show(); }
+function close() { $("#view").classList.remove("open"); $("#big").removeAttribute("src"); }
+function step(d) { const j = cur + d; if (j >= 0 && j < shown.length) { cur = j; showOrig = false; show(); } }
+
+$(".nav.l").onclick = () => step(-1);
+$(".nav.r").onclick = () => step(1);
+$("#close").onclick = close;
+$("#orig").onclick = () => { showOrig = !showOrig; show(); };
+$("#exp").onclick = async () => {
+  $("#exp").disabled = true;
+  const r = await fetch("api/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ u: unk() }) });
+  if (r.ok) showExport(await r.json());
+};
+$("#del").onclick = () => trash("del");
+$("#mine").onclick = () => trash("mine");
+$("#undo").onclick = untrash;
+$("#mark").onclick = () => { marking = !marking; show(); };
+$("#onlyF").onchange = build;
+$("#unk").onchange = () => { for (const el of cells.values()) if (el._vis) fill(el); };
+document.addEventListener("keydown", e => {
+  if (!$("#view").classList.contains("open")) return;
+  if (e.key === "ArrowRight") step(1);
+  else if (e.key === "ArrowLeft") step(-1);
+  else if (e.key === "Escape") close();
+  else if (e.key === "o" && !e.repeat) { showOrig = true; show(); }
+  else if (e.key === "e") { marking = !marking; show(); }
+  else if (e.key === "x" || e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); trash("del"); }
+  else if (e.key === "m") trash("mine");
+  else if (e.key === "z" && (e.metaKey || e.ctrlKey)) untrash();
+});
+document.addEventListener("keyup", e => { if (e.key === "o" && $("#view").classList.contains("open")) { showOrig = false; show(); } });
+let tx = null;
+$("#stage").addEventListener("touchstart", e => { tx = e.touches[0].clientX; }, { passive: true });
+$("#stage").addEventListener("touchend", e => {
+  if (tx === null) return; const dx = e.changedTouches[0].clientX - tx; tx = null;
+  if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
+});
+
+(async () => {
+  names = await (await fetch("api/list")).json();
+  build(); poll();
+})();
+</script>
+</body>
+</html>

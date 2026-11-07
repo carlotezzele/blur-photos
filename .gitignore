@@ -3,3 +3,12 @@ ref_emb.npy
 *.npy
 *.pt
 __pycache__/
+*.onnx
+cache_femmine/
+*_token.txt
+*.log
+*.csv
+cand.txt
+correzioni_femmine.json
+export_femmine.json
+t_*.jpg
